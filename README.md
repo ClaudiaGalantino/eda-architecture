@@ -1,2 +1,2 @@
 # thesis_vm
-Definition of an EDA architecture on Linux Virtual Machine
+Event-driven architecture pototype for an IoT orchestrator on Linux Virtual Machine
