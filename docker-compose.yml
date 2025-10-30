@@ -1,0 +1,24 @@
+# This file will define and run a multi-container Docker application for the EDA architecture.
+# The services defined are MQTT Broker, Kafka Broker.
+
+version: '3.8'
+
+services:
+
+# MQTT Broker
+  mosquitto:
+    image: eclipse-mosquitto:latest
+    container_name: mosquitto
+    volumes: 
+      - ./configs/mosquitto.conf:/mosquitto/config/mosquitto.conf
+      - ./data/mosquitto:/mosquitto/data
+      - ./log/mosquitto:/mosquitto/log
+    ports:
+      - "1883:1883"  # MQTT default port
+      - "9001:9001"  # WebSocket port
+
+    # to interact with command line
+    stdin_open: true
+    tty: true
+
+    restart: unless-stopped # avoids to restart on manual stop
