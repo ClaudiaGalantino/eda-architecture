@@ -1,0 +1,13 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.env
+*.env.local
+
+# Virtual environments
+*/eda_env/
+
+# Logs
+*.log
