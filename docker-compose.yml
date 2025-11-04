@@ -20,3 +20,17 @@ services:
     tty: true
 
     restart: unless-stopped # avoids to restart on manual stop
+
+  # MQTT Subscriber
+  mqtt_subscriber:
+    build: ./services/mqtt_consumer
+    container_name: mqtt_subscriber
+    depends_on:
+      - mosquitto
+    env_file:
+      - ./services/mqtt_consumer/.env
+    restart: unless-stopped
+
+networks:
+  default:
+    name: eda_network

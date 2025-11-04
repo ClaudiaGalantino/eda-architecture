@@ -46,8 +46,7 @@ if missing:
     print(f"Missing or invalid environment variables: {', '.join(missing)}")
     sys.exit(1)
 
-# Create an MQTT client with a specific client ID, using MQTT 3.1.1 protocol
-# and the latest callback API (version 2) to avoid deprecation warnings
+# Create an MQTT client with a specific client ID, using MQTT 3.1.1 protocol and the latest callback API (version 2)
 client = mqtt.Client(client_id=mqtt_client, protocol=mqtt.MQTTv311, callback_api_version=mqtt.CallbackAPIVersion.VERSION2)
 client.connect(mqttBroker, port)
 client.loop_start()
@@ -94,11 +93,13 @@ try:
             "TVOC_ppb": tvoc,
         } 
         
+        # publish data collected
         client.publish(topic, json.dumps(data))
         print(f"Publishing {data} on topic: {topic}")
 
         time.sleep(60 * sample_frequency)
 
 except KeyboardInterrupt:
+    print("Interrupted by user. Shutting down publisher...")
     client.loop_stop()
     client.disconnect()

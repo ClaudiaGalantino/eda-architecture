@@ -7,7 +7,7 @@ __pycache__/
 *.env.local
 
 # Virtual environments
-*/eda_env/
+services/*/*-env/
 
 # Logs
 *.log
