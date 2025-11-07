@@ -11,10 +11,10 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy subscriber script
-COPY mqtt_subscriber.py .
+COPY mqtt_kafka_bridge.py .
 
 # Force Python to flush print output immediately
 ENV PYTHONUNBUFFERED=1
 
 # Run the subscriber automatically when the container starts
-CMD ["python", "mqtt_subscriber.py"]
+CMD ["python", "mqtt_kafka_bridge.py"]
