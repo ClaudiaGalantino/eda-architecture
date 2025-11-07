@@ -19,21 +19,24 @@ services:
     tty: true
 
     restart: unless-stopped # avoids to restart on manual stop
-
   # MQTT Subscriber
   mqtt_subscriber:
-    build: ./services/mqtt_consumer
+    build: ./services/mqtt_kafka_bridge
     container_name: mqtt_subscriber
     depends_on:
-      - mosquitto
+      mosquitto:
+        condition: service_started
+      broker:
+        condition: service_healthy
     env_file:
-      - ./services/mqtt_consumer/.env
+      - ./services/mqtt_kafka_bridge/.env
     restart: unless-stopped
 
-  # Kafka Broker 
+  # Kafka Broker
   broker:
     image: apache/kafka:latest
     container_name: broker
+    hostname: broker
     environment:
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
@@ -50,6 +53,11 @@ services:
     volumes:
       - ./data/kafka:/var/lib/kafka/data
       - ./log/kafka:/var/lib/kafka/logs
+    healthcheck:
+      test: ["CMD", "bash", "-c", "nc -z localhost 9092"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
 
 # Custom network for the EDA architecture

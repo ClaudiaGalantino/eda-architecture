@@ -7,7 +7,7 @@ __pycache__/
 *.env.local
 
 # Virtual environments
-services/mqtt_kafka_bridge/env/
+services/*/env/
 
 # Logs
 *.log

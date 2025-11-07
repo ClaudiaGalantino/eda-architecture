@@ -14,41 +14,32 @@ import sys
 load_dotenv()
 
 # connect to the broker - in this case it's the VM IP
-mqttBroker = os.getenv('MQTT_BROKER')
-port = int(os.getenv('PORT'))
-topic = os.getenv('TOPIC')
+mqtt_broker = os.getenv('MQTT_BROKER')
+mqtt_port = int(os.getenv('PORT'))
+mqtt_topic = os.getenv('TOPIC')
 mqtt_client = os.getenv('MQTT_CLIENT')
 
 sample_frequency = int(os.getenv('SAMPLE_FREQUENCY'))
 
+# Validate environment variables
 missing = []
-if not mqttBroker:
-    missing.append('MQTT_BROKER')
+for var_name, var_value in {
+    'MQTT_BROKER': mqtt_broker,
+    'MQTT_TOPIC': mqtt_topic,
+    'MQTT_CLIENT': mqtt_client,
+    'SAMPLE_FREQUENCY': sample_frequency,
+}.items():
+    if not var_value:
+        missing.append(var_name)
+        sys.exit(1)
 
-# ensure port is valid integer (port may already be int)
-try:
-    port = int(port)
-except Exception:
-    missing.append('PORT (missing or not an integer)')
-
-if not topic:
-    missing.append('TOPIC')
-
-if not mqtt_client:
-    missing.append('MQTT_CLIENT')
-
-try:
-    sample_frequency = int(sample_frequency)
-except Exception:
-    missing.append('SAMPLE_FREQUENCY (missing or not an integer)')
-
-if missing:
-    print(f"Missing or invalid environment variables: {', '.join(missing)}")
-    sys.exit(1)
-
-# Create an MQTT client with a specific client ID, using MQTT 3.1.1 protocol and the latest callback API (version 2)
-client = mqtt.Client(client_id=mqtt_client, protocol=mqtt.MQTTv311, callback_api_version=mqtt.CallbackAPIVersion.VERSION2)
-client.connect(mqttBroker, port)
+# Create an MQTT client with a specific client ID, using MQTT 3.1.1 protocol and the latest callback API
+client = mqtt.Client(
+    client_id=mqtt_client,
+    protocol=mqtt.MQTTv311,
+    callback_api_version=mqtt.CallbackAPIVersion.VERSION2
+)
+client.connect(mqtt_broker, mqtt_port)
 client.loop_start()
 
 
@@ -93,9 +84,8 @@ try:
             "TVOC_ppb": tvoc,
         } 
         
-        # publish data collected
-        client.publish(topic, json.dumps(data))
-        print(f"Publishing {data} on topic: {topic}")
+        client.publish(mqtt_topic, json.dumps(data))
+        print(f"Publishing {data} on topic: {mqtt_topic}")
 
         time.sleep(60 * sample_frequency)
 
