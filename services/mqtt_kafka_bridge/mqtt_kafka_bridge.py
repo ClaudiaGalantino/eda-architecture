@@ -35,7 +35,7 @@ kafka_client_id = os.getenv('KAFKA_CLIENT_ID')
 kafka_acks = os.getenv('KAFKA_ACKS', 'all')
 kafka_retries = int(os.getenv('KAFKA_RETRIES', 5))
 
-sleep_time = int(os.getenv('SLEEP_TIME'))
+sleep_time = int(os.getenv('SLEEP_TIME'), 30)
 
 # Validate environment variables
 missing = []
@@ -47,7 +47,6 @@ for var_name, var_value in {
     "KAFKA_BROKER": kafka_broker,
     "KAFKA_TOPIC": kafka_topic,
     "KAFKA_CLIENT_ID": kafka_client_id,
-    "SLEEP_TIME": sleep_time,
 }.items():
     if not var_value:
         missing.append(var_name)
@@ -56,28 +55,29 @@ if missing:
     print(f"Missing or invalid environment variables: {', '.join(missing)}")
     sys.exit(1)
 
-# Create an MQTT client with a specific client ID, using MQTT 3.1.1 protocol and the latest callback API
+# MQTT client
 client = mqtt.Client(
     client_id=mqtt_client,
     protocol=mqtt.MQTTv311, 
     callback_api_version=mqtt.CallbackAPIVersion.VERSION2
 )
 
+# Kafka producer
 kafka_conf = {
     'bootstrap.servers': kafka_broker,
     'client.id': kafka_client_id,
     'acks': kafka_acks,
     'retries': kafka_retries
 }
-
 producer = Producer(kafka_conf)
 
 def delivery_report(err, msg):
     if err is not None:
         log("KAFKA", f"Message delivery failed: {err}")
     else:
-        log('KAFKA', f"The message is: {msg.value().decode('utf-8')}")
-        log("KAFKA", f"Message delivered to {msg.topic()} [{msg.partition()}] at offset {msg.offset()}")
+        log("KAFKA", f"Message successfully delivered!")
+        log("KAFKA", f"Content: {json.dumps(json.loads(msg.value().decode('utf-8')), indent=2, ensure_ascii=False)}")
+        log("KAFKA", f"Topic: {msg.topic()}, Partition: {msg.partition()}, Offset: {msg.offset()}")
 
 def on_connect(client, userdata, flags, rc, properties=None):
     if rc == 0:
@@ -87,18 +87,22 @@ def on_connect(client, userdata, flags, rc, properties=None):
         log("MQTT", f"Failed to connect, return code {rc}")
 
 def on_message(client, userdata, msg):
+
     payload = msg.payload.decode('utf-8', errors='replace')
     try:
-        data = json.loads(payload)
-        log("MQTT", f"JSON message received on topic {msg.topic}:\n{json.dumps(data, indent=2, ensure_ascii=False)}")
-        kafka_message = {
-            'mqtt_topic': msg.topic,
-            'payload': data
-        }
+
+        data_received = json.loads(payload)
+        log("MQTT", f"JSON message received on topic {msg.topic}:\n{json.dumps(data_received, indent=2, ensure_ascii=False)}")
+        
+        # convert to bytes, handle missing key
+        key = data_received.get("room_name")
+        key_bytes = key.encode('utf-8') if key is not None else None
+        value_bytes = json.dumps(data_received, ensure_ascii=False).encode('utf-8')
+        
         producer.produce(
             kafka_topic, 
-            key=None,
-            value=json.dumps(kafka_message),
+            key=key_bytes,
+            value=value_bytes,
             callback=delivery_report
         )
     except json.JSONDecodeError:
@@ -122,5 +126,5 @@ except Exception as e:
 finally:
     client.loop_stop()
     client.disconnect()
-    producer.flush(5)
+    producer.flush(timeout=10)
     log("SYSTEM", "MQTT-Kafka bridge stopped.")

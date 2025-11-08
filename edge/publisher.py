@@ -18,6 +18,7 @@ mqtt_broker = os.getenv('MQTT_BROKER')
 mqtt_port = int(os.getenv('PORT'))
 mqtt_topic = os.getenv('TOPIC')
 mqtt_client = os.getenv('MQTT_CLIENT')
+room = os.getenv('ROOM')
 
 sample_frequency = int(os.getenv('SAMPLE_FREQUENCY'))
 
@@ -27,6 +28,7 @@ for var_name, var_value in {
     'MQTT_BROKER': mqtt_broker,
     'MQTT_TOPIC': mqtt_topic,
     'MQTT_CLIENT': mqtt_client,
+    'ROOM': room,
     'SAMPLE_FREQUENCY': sample_frequency,
 }.items():
     if not var_value:
@@ -78,10 +80,12 @@ try:
 
         data = {
             "timestamp": current_time,
+            "room_name": room,
             "temperature_DHT22_C": dht_temp,
             "humidity_DHT22_%": dht_humidity,
             "CO2_ppm": co2,
             "TVOC_ppb": tvoc,
+            "mqtt_topic": mqtt_topic,
         } 
         
         client.publish(mqtt_topic, json.dumps(data))
