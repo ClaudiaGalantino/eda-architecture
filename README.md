@@ -10,8 +10,7 @@ The system is based on an event-driven architecture that enables automatic acqui
 
 The architecture follows a **publish-subscribe** paradigm and consists of:
 
-[IoT Sensors] → [MQTT Broker] → [MQTT-Kafka Bridge] → [Kafka Topics] → [Consumer Services]
-
+[IoT Sensors / Wearables] → [MQTT Broker] → [MQTT-Kafka Bridge] → [Kafka Broker] → [Consumer Services] → [MongoDB Storage]
 
 ### Main Components
 
@@ -19,8 +18,11 @@ The architecture follows a **publish-subscribe** paradigm and consists of:
 |------------|-------------|
 | **MQTT Broker (Mosquitto)** | Receives messages from IoT devices (e.g., Raspberry Pi). |
 | **MQTT-Kafka Bridge** | Subscribes to MQTT topics and publishes messages to Kafka topics. |
+| **Wearable Producer**	| |
 | **Kafka Broker** | Manages message queues and ensures reliable event delivery. |
 | **Kafka Consumer** | Consumes messages from Kafka for processing or storage. |
+| **MongoDB** | Stores processed data.|
+| **Mongo Express**	| Web UI for MongoDB visualization and management.|
 
 ## 🧱 Project Structure
 Top-level layout of the main folders and files in this repository:
@@ -28,42 +30,34 @@ Top-level layout of the main folders and files in this repository:
 eda-architecture/
 │
 ├── docker-compose.yml
-│
 ├── configs/
-│ └── mosquitto.conf
-│
-├── data/
-│ ├── kafka/
-│ └── mosquitto/
-│
+│   └── mosquitto.conf
 ├── docs/
-│ └── architecture.md
-|
-├── log/
-│ ├── kafka/
-│ └── mosquitto/
-│
+│   └── architecture.md
 ├── edge/
-| ├── env.example
-│ ├── mqtt_subscriber.py
-│ ├── publisher.py 
-│ └── README.md
-│
-├── services/
-│ ├── mqtt_kafka_bridge/ 
-│ │ ├── mqtt_kafka_bridge.py
-│ │ ├── env.example
-│ │ ├── requirements.txt
-│ │ └── Dockerfile
-│ │
-│ └── kafka_consumer/ 
-│   ├── consumer.py
 │   ├── env.example
-│   ├── requirements.txt
-│   └── Dockerfile
-│
+│   ├── mqtt_subscriber.py
+│   ├── publisher.py
+│   └── README.md
+├── services/
+│   ├── mqtt_kafka_bridge/
+│   │   ├── mqtt_kafka_bridge.py
+│   │   ├── env.example
+│   │   ├── requirements.txt
+│   │   └── Dockerfile
+│   ├── kafka_consumer/
+│   │   ├── consumer.py
+│   │   ├── env.example
+│   │   ├── requirements.txt
+│   │   └── Dockerfile
+│   └── wearable_producer/ 
+│       ├── producer.py
+│       ├── env.example
+│       ├── requirements.txt
+│       └── Dockerfile
 ├── .gitignore
 └── README.md
+
 ```
 
 ## ⚙️ Technologies Used
@@ -72,7 +66,9 @@ eda-architecture/
 - 🧠 **Apache Kafka** – message streaming and event management  
 - 🔌 **Eclipse Mosquitto (MQTT Broker)** – lightweight IoT communication  
 - 🐍 **Python** – application logic (using `paho-mqtt` and `kafka-python`)  
-- 🌱 **dotenv** – environment variable management  
+- 🗄️ MongoDB – storage backend
+- 🌐 Mongo Express – visualization interface for MongoDB
+- 🌱 dotenv – environment variable management 
 
 ## ▶️ How to Run the Project
 
@@ -87,6 +83,7 @@ Copy and customize the example .env files provided in the service folders:
 ```bash
 cp services/mqtt_kafka_bridge/env.example services/mqtt_kafka_bridge/.env
 cp services/kafka_consumer/env.example services/kafka_consumer/.env
+cp services/wearable_producer/env.example services/wearable_producer/.env 
 ```
 Then, update the MQTT and Kafka broker addresses to match your network.
 
@@ -98,7 +95,13 @@ All services will start within a dedicated Docker network defined in docker-comp
 
 ### 4. Check the Logs
 ```bash
+docker ps
 docker logs mosquitto -f
-docker logs mqtt_kafka_bridge -f
+docker logs broker -f
+docker logs mqtt_subscriber -f
 docker logs kafka_consumer -f
+docker logs mongo -f
+docker logs mongo_express -f
 ```
+### 5. MongoDB Access Interface
+Mongo Express: http://localhost:8081
