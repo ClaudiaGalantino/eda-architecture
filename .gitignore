@@ -12,8 +12,5 @@ services/*/env/
 # Logs
 *.log
 
-# mosquitto data
-data/mosquitto/
-
-# Kafka data
-data/kafka/
+# Data files
+data/*

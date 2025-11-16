@@ -1,5 +1,16 @@
 # Docker Compose for the EDA architecture
-# Runs Mosquitto (MQTT broker), Kafka broker, and an MQTT subscriber service.
+# Services included:
+#  - mosquitto: MQTT broker (1883 + WebSocket 9001)
+#  - broker: Apache Kafka broker
+#  - mqtt_subscriber: bridges MQTT -> Kafka
+#  - wearable_producer: produces wearable data to Kafka
+#  - orchestrator: coordinates jobs/triggers; can start producer containers or send triggers
+#  - kafka_consumer: consumes Kafka topics and writes to MongoDB
+#  - mongo: MongoDB instance
+#  - mongo-express: web UI for MongoDB
+#
+# Services, volumes and env files are relative to the compose file location (/home/claudia/eda-architecture).
+# Use `docker compose up -d` to start and `docker compose down -v` to stop and remove volumes.
 
 services:
 # MQTT Broker
@@ -8,26 +19,24 @@ services:
     container_name: mosquitto
     volumes: 
       - ./configs/mosquitto.conf:/mosquitto/config/mosquitto.conf
-      - ./data/mosquitto:/mosquitto/data
+      - mosquitto_data:/mosquitto/data
       - ./log/mosquitto:/mosquitto/log
     ports:
       - "1883:1883"  
-      - "9001:9001"  # WebSocket port
-
-    # to interact with command line
+      - "9001:9001" 
     stdin_open: true
     tty: true
+    restart: unless-stopped 
 
-    restart: unless-stopped # avoids to restart on manual stop
   # MQTT Subscriber
   mqtt_subscriber:
     build: ./services/mqtt_kafka_bridge
     container_name: mqtt_subscriber
     depends_on:
-      mosquitto:
-        condition: service_started
       broker:
         condition: service_healthy
+      mosquitto:
+        condition: service_started
     env_file:
       - ./services/mqtt_kafka_bridge/.env
     restart: unless-stopped
@@ -52,16 +61,74 @@ services:
       KAFKA_NUM_PARTITIONS: 3
       KAFKA_LOG_DIRS: /var/lib/kafka/data
     volumes:
-      - ./data/kafka:/var/lib/kafka/data
+      - kafka_data:/var/lib/kafka/data
       - ./log/kafka:/var/lib/kafka/logs
     healthcheck:
       test: ["CMD", "bash", "-c", "nc -z localhost 9092"]
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 20
 
+
+# Kafka Wearable Data Producer
+  # wearable_producer:
+  #   build: ./services/wearable_producer
+  #   env_file:
+  #     - ./services/wearable_producer/.env
+  #   restart: unless-stopped
+  #   depends_on:
+  #     broker:
+  #       condition: service_healthy
+  #   tty: true
+  #   stdin_open: true
+
+
+  # MongoDB Service
+  mongo:
+    image: mongo
+    restart: always
+    container_name: mongo
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: example
+    volumes:
+    - mongo_data:/data/db
+
+  # Mongo Express Service
+  mongo-express:
+    image: mongo-express
+    restart: always
+    ports:
+      - 8081:8081
+    container_name: mongo_express
+    environment:
+      ME_CONFIG_MONGODB_URL: mongodb://root:example@mongo:27017/
+      ME_CONFIG_BASICAUTH_ENABLED: true
+      ME_CONFIG_BASICAUTH_USERNAME: mongoexpressuser
+      ME_CONFIG_BASICAUTH_PASSWORD: mongoexpresspass
+
+# Kafka Consumer Service
+  kafka_consumer:
+    build: ./services/kafka_consumer
+    container_name: kafka_consumer
+    env_file:
+      - ./services/kafka_consumer/.env
+    restart: unless-stopped
+    depends_on:
+      broker:
+        condition: service_healthy
+      mongo:
+        condition: service_started
+    tty: true
+    stdin_open: true
 
 # Custom network for the EDA architecture
 networks:
   default:
     name: eda_network
+
+# Volumes for persistent data storage
+volumes:
+  mosquitto_data:
+  kafka_data:
+  mongo_data:
