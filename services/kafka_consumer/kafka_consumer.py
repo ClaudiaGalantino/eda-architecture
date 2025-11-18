@@ -95,8 +95,7 @@ try:
                 log("KAFKA_CONSUMER", f"Error: {msg.error()}")
         else:
             topic = msg.topic()
-            log("KAFKA_CONSUMER", f"Received message: {json.dumps(json.loads(msg.value().decode('utf-8')), indent=2, ensure_ascii=False)}")
-            log("KAFKA_CONSUMER", f"Topic: {msg.topic()}, Partition: {msg.partition()}, Offset: {msg.offset()}")
+            log("KAFKA_CONSUMER", f"Received message! \n Topic: {msg.topic()}, Partition: {msg.partition()}, Offset: {msg.offset()}")
             doc = json.loads(msg.value().decode('utf-8'))
             
             # write data to MongoDB
@@ -107,7 +106,7 @@ try:
                     collection.insert_one(doc)
                     log("MONGO", f"Inserted document into {collection_name}")            
                 except Exception as e:
-                    log("MONGO", f"Failed to insert {doc} into {collection_name}: {e}")
+                    log("MONGO", f"Failed to insert document {json.dumps(doc, indent=2, ensure_ascii=False, default=str)} into {collection_name}.\n Error: {e}")
 
 except Exception as e:
     log("KAFKA_CONSUMER", f"Exception occurred: {str(e)}")

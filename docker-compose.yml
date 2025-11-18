@@ -71,16 +71,19 @@ services:
 
 
 # Kafka Wearable Data Producer
-  # wearable_producer:
-  #   build: ./services/wearable_producer
-  #   env_file:
-  #     - ./services/wearable_producer/.env
-  #   restart: unless-stopped
-  #   depends_on:
-  #     broker:
-  #       condition: service_healthy
-  #   tty: true
-  #   stdin_open: true
+  wearable_producer:
+    container_name: wearable_producer
+    build: ./services/wearable_producer
+    env_file:
+      - ./services/wearable_producer/.env
+    restart: unless-stopped
+    depends_on:
+      broker:
+        condition: service_healthy
+    volumes:
+      - ./services/wearable_producer/processed_data:/app/processed_data
+    tty: true
+    stdin_open: true
 
 
   # MongoDB Service
