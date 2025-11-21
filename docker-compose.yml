@@ -13,7 +13,7 @@
 # Use `docker compose up -d` to start and `docker compose down -v` to stop and remove volumes.
 
 services:
-# MQTT Broker
+  # MQTT Broker
   mosquitto:
     image: eclipse-mosquitto:latest
     container_name: mosquitto
@@ -69,8 +69,16 @@ services:
       timeout: 5s
       retries: 20
 
+  # Garmin Data Processor
+  fit_processor:
+    image: fit-processing-service:latest
+    container_name: garmin_processor
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+    build: ./services/fit_processor
 
-# Kafka Wearable Data Producer
+  # Kafka Wearable Data Producer
   wearable_producer:
     container_name: wearable_producer
     build: ./services/wearable_producer
@@ -80,8 +88,10 @@ services:
     depends_on:
       broker:
         condition: service_healthy
+      fit_processor:
+        condition: service_started
     volumes:
-      - ./services/wearable_producer/processed_data:/app/processed_data
+      - ./data/garmin_fit_files:/app/data/garmin_fit_files
     tty: true
     stdin_open: true
 
@@ -112,7 +122,7 @@ services:
     depends_on:
       - mongo
 
-# Kafka Consumer Service
+  # Kafka Consumer Service
   kafka_consumer:
     build: ./services/kafka_consumer
     container_name: kafka_consumer

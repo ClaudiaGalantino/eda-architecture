@@ -1,10 +1,10 @@
-# Use of lightweight Python image
+# Python image
 FROM python:3.12-slim
 
 # Set working directory inside container
 WORKDIR /app
 
-# Copy requirements file first to leverage Docker cache
+# Copy requirements file
 COPY requirements.txt .
 
 # Install dependencies
