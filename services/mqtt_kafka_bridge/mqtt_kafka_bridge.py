@@ -11,10 +11,16 @@ import time
 load_dotenv()
 
 def log (prefix, message):
+    """
+    Simple logger function.
+    """
     print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}][{prefix}] {message}")
 
 running = True
 def handle_shutdown(signum, frame):
+    """
+    Handle shutdown signals to gracefully stop the bridge.
+    """
     global running
     log("SYSTEM", f"Shutdown signal {signum} received. Stopping...")
     running = False
@@ -72,6 +78,9 @@ kafka_conf = {
 producer = Producer(kafka_conf)
 
 def delivery_report(err, msg):
+    """
+    Callback for message delivery reports.
+    """
     if err is not None:
         log("KAFKA", f"Message delivery failed: {err}")
     else:
@@ -80,6 +89,15 @@ def delivery_report(err, msg):
         log("KAFKA", f"Topic: {msg.topic()}, Partition: {msg.partition()}, Offset: {msg.offset()}")
 
 def on_connect(client, userdata, flags, rc, properties=None):
+    """
+    Callback for MQTT connection.
+    Args:
+        client: The MQTT client instance.
+        userdata: The private user data.
+        flags: Response flags sent by the broker.
+        rc: The connection result.
+        properties: MQTT v5.0 properties.
+    """
     if rc == 0:
         log("MQTT", "Connected to MQTT Broker!")
         client.subscribe(mqtt_topic)
@@ -87,6 +105,15 @@ def on_connect(client, userdata, flags, rc, properties=None):
         log("MQTT", f"Failed to connect, return code {rc}")
 
 def on_message(client, userdata, msg):
+    """
+    Callback for MQTT message reception.
+    Args:
+        client: The MQTT client instance.
+        userdata: The private user data.
+        msg: The received MQTT message.
+        
+    Returns:
+        Processes the message and sends it to Kafka."""
 
     payload = msg.payload.decode('utf-8', errors='replace')
     try:

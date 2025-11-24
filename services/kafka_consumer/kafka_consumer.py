@@ -10,10 +10,16 @@ import signal
 load_dotenv()
 
 def log(prefix, message):
+    """
+    Simple logger function.
+    """
     print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}][{prefix}] {message}")
 
 running = True
 def handle_shutdown(signum, frame):
+    """
+    Handle shutdown signals to gracefully stop the consumer.
+    """
     global running
     log("SYSTEM", f"Shutdown signal {signum} received. Stopping...")
     running = False
