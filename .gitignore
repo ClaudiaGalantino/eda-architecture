@@ -16,7 +16,5 @@ services/*/env/
 data/*
 
 # Test data 
-services/wearable_producer/garmin_test_data_processing.py
-services/wearable_producer/garmin_data/
-services/wearable_producer/processed_data/
+services/backend/sample_data/
 

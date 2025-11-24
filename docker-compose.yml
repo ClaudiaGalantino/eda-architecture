@@ -78,12 +78,12 @@ services:
     restart: unless-stopped
     build: ./services/fit_processor
 
-  # Kafka Wearable Data Producer
-  wearable_producer:
-    container_name: wearable_producer
-    build: ./services/wearable_producer
+  # Backend Service
+  backend:
+    container_name: backend
+    build: ./services/backend
     env_file:
-      - ./services/wearable_producer/.env
+      - ./services/backend/.env
     restart: unless-stopped
     depends_on:
       broker:
@@ -94,7 +94,6 @@ services:
       - ./data/garmin_fit_files:/app/data/garmin_fit_files
     tty: true
     stdin_open: true
-
 
   # MongoDB Service
   mongo:
