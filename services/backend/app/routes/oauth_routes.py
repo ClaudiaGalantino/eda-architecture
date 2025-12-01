@@ -1,8 +1,8 @@
 import uuid
 from venv import logger
 from flask import Blueprint, request, redirect, url_for, render_template_string, session
-from services.backend.app.db_utils import *
-from ..garmin_client import garmin_client
+from app.db_utils import *
+import app.garmin_client as garmin_module
 
 # Blueprint for OAuth routes
 oauth_bp = Blueprint('oauth', __name__)
@@ -10,9 +10,9 @@ oauth_bp = Blueprint('oauth', __name__)
 # In-memory store for the Request Token (temporary)
 temp_request_tokens = {}
 
-# ==========================================
+# ===========================
 # UTILITY FOR USER SESSION
-# ==========================================
+# ===========================
 
 def get_current_user_id():
     """
@@ -72,7 +72,6 @@ def index():
             <p>Garmin Status: <span class="status-connected">Connected</span></p>
             <p class="user-id">Current User ID (from session): <strong>{current_user_id}</strong></p>
             {mapping_content}
-            <p><a href='{url_for("oauth.fetch")}'>1. Request Sleep and Stress data for the last 7 days (JSON)</a></p>
             <p><a href='{url_for("oauth.login")}'>3. Re-authenticate with Garmin (Update existing token)</a></p>
         """
     else:    
@@ -88,7 +87,7 @@ def index():
 @oauth_bp.route('/login')
 def login():
     try:
-        r_token, r_secret, auth_url = garmin_client.get_request_token_and_url()
+        r_token, r_secret, auth_url = garmin_module.garmin_client.get_request_token_and_url()
         temp_request_tokens[r_token] = r_secret
         return redirect(auth_url)
     except Exception as e:
@@ -109,9 +108,9 @@ def callback():
         return "Session expired or invalid token. Please start the login process again.", 400
         
     try:
-        acc_token, acc_secret = garmin_client.get_access_token(oauth_token, request_secret, oauth_verifier)
+        acc_token, acc_secret = garmin_module.garmin_client.get_access_token(oauth_token, request_secret, oauth_verifier)
         
-        garmin_subscriber_id = garmin_client.fetch_garmin_user_id(acc_token, acc_secret)
+        garmin_subscriber_id = garmin_module.garmin_client.fetch_garmin_user_id(acc_token, acc_secret)
 
         if not garmin_subscriber_id:
             logger.error(f"Failed to retrieve Garmin User ID for internal user {current_user_id}. Cannot complete mapping.")

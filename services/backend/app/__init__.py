@@ -1,3 +1,4 @@
+# __init__.py
 import os
 import logging
 from flask import Flask
@@ -30,12 +31,5 @@ def create_app():
     # Blueprint registration
     app.register_blueprint(oauth_bp, url_prefix="/")
     # app.register_blueprint(garmin_bp, url_prefix="/garmin") # todo
-
-   
-    
-    if callback_url:
-        initialize_garmin_client(callback_url) 
-    else:
-        logger.warning("CALLBACK_URL non impostato. Il client Garmin non è completamente inizializzato.")
 
     return app

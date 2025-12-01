@@ -1,6 +1,6 @@
 import os
 from venv import logger
-from flask import logging
+import logging
 from requests_oauthlib import OAuth1Session
 
 garmin_client = None 
@@ -45,7 +45,7 @@ class OAuthAPI:
         tokens = oauth.fetch_access_token(self.access_token_url)
         return tokens.get('oauth_token'), tokens.get('oauth_token_secret')
 
-    def fetch_garmin_user_id(self, access_token, access_token_secret): #??????
+    def fetch_garmin_user_id(self, access_token, access_token_secret):
         """
         Retrieve the unique, persistent Garmin API user ID using the
         provided access token and access token secret.
