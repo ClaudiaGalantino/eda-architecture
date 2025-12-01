@@ -18,3 +18,7 @@ data/*
 # Test data 
 services/backend/sample_data/
 
+# SQLite database
+*.db
+
+.vscode/

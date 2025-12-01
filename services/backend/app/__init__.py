@@ -1,26 +1,41 @@
+import os
+import logging
 from flask import Flask
-from .routes.garmin import garmin_bp
-from .services.wearable_producer import close_producer, start_producer
+from dotenv import load_dotenv
+
+load_dotenv() 
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
+# Import the necessary components
+from .routes.oauth_routes import oauth_bp 
+from .db_utils import init_db
+from .garmin_client import initialize_garmin_client
+
+# Initialize the database
+init_db()
 
 def create_app():
     """
-    Factory to create and configure the Flask application."""
+   Function to initialise the app
+    """
     app = Flask(__name__)
-    app.register_blueprint(garmin_bp, url_prefix='/garmin') # TBD: adjust prefix
 
-    # start producer for first request
-    try:
-        start_producer()
-    except Exception as e:
-        print(f"Error starting producer: {e}")
+    # Flask configuration
 
-    # close producer when closing app
-    @app.teardown_appcontext
-    def teardown_producer(exception=None):
-        """
-        This function is called automatically by Flask when the application
-        context is torn down; no explicit invocation is necessary.
-        """
-        close_producer()
+    app.secret_key = os.getenv("FLASK_SECRET_KEY") 
+    callback_url = os.getenv('CALLBACK_URL')
+    
+    # Blueprint registration
+    app.register_blueprint(oauth_bp, url_prefix="/")
+    # app.register_blueprint(garmin_bp, url_prefix="/garmin") # todo
+
+   
+    
+    if callback_url:
+        initialize_garmin_client(callback_url) 
+    else:
+        logger.warning("CALLBACK_URL non impostato. Il client Garmin non è completamente inizializzato.")
 
     return app
