@@ -38,10 +38,6 @@ app.register_blueprint(oauth_bp, url_prefix="/")
  # ADD THE NECESSARY PRODUCER LOGIC!!!!!!
 
 if __name__ == '__main__':
-    # Delete old DB
-    if os.path.exists(db_name):
-         os.remove(db_name)
-         print("Old database removed.")
     init_db()
     print("Database initialized (Tokens only).")
     print("Starting Flask server on http://localhost:5000")

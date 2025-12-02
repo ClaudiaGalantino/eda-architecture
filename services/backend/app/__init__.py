@@ -12,7 +12,6 @@ logger.setLevel(logging.INFO)
 # Import the necessary components
 from .routes.oauth_routes import oauth_bp 
 from .db_utils import init_db
-from .garmin_client import initialize_garmin_client
 
 # Initialize the database
 init_db()
@@ -26,7 +25,6 @@ def create_app():
     # Flask configuration
 
     app.secret_key = os.getenv("FLASK_SECRET_KEY") 
-    callback_url = os.getenv('CALLBACK_URL')
     
     # Blueprint registration
     app.register_blueprint(oauth_bp, url_prefix="/")

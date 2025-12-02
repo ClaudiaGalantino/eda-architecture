@@ -30,7 +30,9 @@ def get_current_user_id():
 
 @oauth_bp.route('/')
 def index():
-    # Use the get_current_user_id() function for the internal user ID
+    """
+    Main dashboard showing Garmin connection status and options.
+    """
     current_user_id = get_current_user_id() 
     row = get_token(current_user_id)
     html_template = """
@@ -53,8 +55,7 @@ def index():
     </head>
     <body>
         <div class="container">
-            <h1>Garmin API Demo</h1>
-            <p class="warning">WARNING: This user ID is fictitious and is tracked only via your browser session.</p>
+            <h1>Garmin API </h1>
             {}
         </div>
     </body>
@@ -64,21 +65,24 @@ def index():
     if row:
         mapping_content = f"""
             <div class="mapping-status">
-                <p>Push Mapping Status (Webhook): <span class="status-connected">Registered</span></p>
-                <p>Your backend is ready to receive Push data for the internal user <strong>{current_user_id}</strong>.</p>
+            <form method="post" action="{url_for('oauth.bind_email')}" style="margin-top:10px;">
+                <label for="email">Enter your email to link with this account:</label><br/>
+                <input type="hidden" name="internal_user_id" value="{current_user_id}"/>
+                <input type="email" id="email" name="email" required style="padding:6px;margin-top:6px;width:100%;box-sizing:border-box;"/>
+                <button type="submit" style="margin-top:8px;background-color:#0078D4;color:white;border:none;padding:8px 12px;border-radius:4px;cursor:pointer;">
+                Submit Email
+                </button>
+            </form>
             </div>
         """
         content = f"""
             <p>Garmin Status: <span class="status-connected">Connected</span></p>
-            <p class="user-id">Current User ID (from session): <strong>{current_user_id}</strong></p>
-            {mapping_content}
-            <p><a href='{url_for("oauth.login")}'>3. Re-authenticate with Garmin (Update existing token)</a></p>
+            {mapping_content}            
         """
     else:    
         content = f"""
             <p>Garmin Status: <span class="status-disconnected">Disconnected</span></p>
-            <p class="user-id">Current User ID (from session): <strong>{current_user_id}</strong></p>
-            <p>No Garmin token found for this user. Start the OAuth flow to enable both Pull and Push.</p>
+            <p>No Garmin token found. Start the OAuth flow to enable both Pull and Push.</p>
             <p><a href='{url_for("oauth.login")}'>Login with Garmin</a></p>
         """
     return render_template_string(html_template.format(content))
@@ -86,6 +90,10 @@ def index():
 
 @oauth_bp.route('/login')
 def login():
+    """
+    Initiate the OAuth login process with Garmin.
+    Redirects the user to Garmin's authorization URL.
+    """
     try:
         r_token, r_secret, auth_url = garmin_module.garmin_client.get_request_token_and_url()
         temp_request_tokens[r_token] = r_secret
@@ -93,8 +101,13 @@ def login():
     except Exception as e:
         return f"Error initiating login: {e}"
 
+
 @oauth_bp.route('/oauth/callback')
 def callback():
+    """
+    Handle the OAuth callback from Garmin.
+    Exchanges the Request Token for an Access Token and retrieves the Garmin User ID.
+    """
     oauth_token = request.args.get('oauth_token')
     oauth_verifier = request.args.get('oauth_verifier')
     
@@ -118,11 +131,57 @@ def callback():
         
         logger.info(f"Garmin Subscriber ID (Webhook Key) obtained: {garmin_subscriber_id}")
 
-        save_token(current_user_id, acc_token, acc_secret)
-        
-        save_garmin_mapping(garmin_subscriber_id, current_user_id)
-        
+        save_token(current_user_id, acc_token, acc_secret)        
         return redirect(url_for('oauth.index'))
+    
     except Exception as e:
         logger.error(f"Error during authorization or ID retrieval: {e}", exc_info=True) 
         return f"Error during authorization or ID retrieval. Check console for details. {e}", 500
+
+
+@oauth_bp.route('/bind_email', methods=['POST'])
+def bind_email():
+    """
+    Bind an email address to the Garmin subscriber ID for the current user.
+    Expects 'email' in the POST form data.
+    """
+    try:
+        current_user_id = get_current_user_id()
+        token, secret = get_token(current_user_id)
+        if not token or not secret:
+            return "No Garmin token found for the current user. Please authenticate first.", 400
+        garmin_subscriber_id = garmin_module.garmin_client.fetch_garmin_user_id(token, secret)
+        email = request.form.get('email')
+        if not email:
+            return "Email is required.", 400
+        save_garmin_mapping(garmin_subscriber_id, email, current_user_id)
+
+        redirect_url = url_for('oauth.done')
+        return redirect(redirect_url)
+    
+    except Exception as e:
+        logger.error(f"Error during authorization or ID retrieval: {e}", exc_info=True) 
+        return f"Error during authorization or ID retrieval. Check console for details. {e}", 500
+
+
+@oauth_bp.route('/done')
+def done():
+    """
+    Simple confirmation page after successful Garmin linking.
+    """
+    email = get_email(get_current_user_id())
+    html = f"""<!DOCTYPE html>
+    <html>
+    <head>
+        <title>All done!</title>
+        <meta charset="utf-8"/>
+    </head>
+    <body style="font-family: Arial, sans-serif; margin: 40px;">
+        <div style="max-width:600px;margin:0 auto;padding:20px;border:1px solid #0078D4;border-radius:8px;">
+            <h1 style="color:#0078D4;">All done!</h1>
+            <p>Your Garmin account has been linked to your email <strong>{email}</strong>.</p>
+            <p><a href='{url_for("oauth.login")}'>Re-authenticate with Garmin (Update existing token)</a></p>
+        </div>
+    </body>
+    </html>"""
+    return render_template_string(html)
