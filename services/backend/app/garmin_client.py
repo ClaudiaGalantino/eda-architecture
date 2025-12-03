@@ -1,7 +1,7 @@
-import os
+from requests_oauthlib import OAuth1Session
 from venv import logger
 import logging
-from requests_oauthlib import OAuth1Session
+import os
 
 garmin_client = None 
 class OAuthAPI:
@@ -34,7 +34,13 @@ class OAuthAPI:
         return request_token, request_token_secret, auth_url
 
     def get_access_token(self, request_token, request_token_secret, verifier):
-        """Step 2: Exchange the approved request token for a permanent access token."""
+        """Step 2: Exchange the approved request token for a permanent access token.
+        
+        Args:
+            request_token (str): The OAuth request token.
+            request_token_secret (str): The OAuth request token secret.
+            verifier (str): The OAuth verifier provided by Garmin after user authorization.
+        """
         oauth = OAuth1Session(
             self.consumer_key,
             client_secret=self.consumer_secret,
@@ -49,6 +55,10 @@ class OAuthAPI:
         """
         Retrieve the unique, persistent Garmin API user ID using the
         provided access token and access token secret.
+
+        Args:
+            access_token (str): User's Access Token (oauth_token).
+            access_token_secret (str): User's Access Token Secret (oauth_token_secret).
         """
         oauth = OAuth1Session(
             self.consumer_key,
@@ -73,9 +83,50 @@ class OAuthAPI:
             logger.error(f"Exception during user ID fetch: {e}")
             return None
 
+    def call_protected_resources(self, access_token, access_token_secret, url, method, data=None):
+        """
+        Calls a Garmin protected resource (e.g., Pull API, Delete Registration) 
+        signed with OAuth 1.0a using the user's access tokens.
+
+        Args:
+            tokens (tuple): (access_token, access_token_secret).
+            url (str): The full URL of the protected resource.
+            method (str): HTTP method ('GET', 'POST', or 'DELETE').
+            data (dict): JSON payload for POST/DELETE requests.
+            
+        Returns:
+            requests.Response: The response object from the API call, or None on error.
+        """
+        
+        oauth = OAuth1Session(
+            self.consumer_key,
+            client_secret=self.consumer_secret,
+            resource_owner_key=access_token,
+            resource_owner_secret=access_token_secret
+        )
+
+        logger.info(f"Calling protected resource: {url} with method {method}")
+        try:
+            match method:
+                case 'GET':
+                    response = oauth.get(url, timeout=10)
+                case 'POST':
+                    response = oauth.post(url, json=data, timeout=10)
+                case 'DELETE':
+                    response = oauth.delete(url, timeout=10)
+                case _:
+                    raise ValueError(f"Unsupported HTTP method: {method}")
+            return response
+        except Exception as e:
+            logger.error(f"Exception during protected resource call: {e}")
+            return None
+
+
 def initialize_garmin_client(callback_url):
     """
     Reconfigure the global GarminAPI client using the provided dynamic callback_url.
+    Args:
+        callback_url (str): The dynamic callback URL to be used in OAuth flow.
     """
     global garmin_client
     consumer_key = os.getenv('CONSUMER_KEY')

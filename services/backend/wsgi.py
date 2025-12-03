@@ -1,9 +1,8 @@
-# wsgi.py
-
 import os
 import logging
 from flask import Flask
 from app.routes.oauth_routes import oauth_bp
+from app.routes.garmin_routes import garmin_bp
 from dotenv import load_dotenv
 from app.db_utils import init_db
 from app.garmin_client import initialize_garmin_client
@@ -33,7 +32,7 @@ else:
 
 # Registrazione dei Blueprint
 app.register_blueprint(oauth_bp, url_prefix="/")
-#app.register_blueprint(garmin_bp, url_prefix="/garmin") #todo
+app.register_blueprint(garmin_bp, url_prefix="/garmin")
 
  # ADD THE NECESSARY PRODUCER LOGIC!!!!!!
 

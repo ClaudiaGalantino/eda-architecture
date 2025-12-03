@@ -1,8 +1,8 @@
-import uuid
+from flask import Blueprint, jsonify, request, session, redirect, url_for, render_template_string
 from venv import logger
-from flask import Blueprint, request, redirect, url_for, render_template_string, session
 from app.db_utils import *
 import app.garmin_client as garmin_module
+import uuid
 
 # Blueprint for OAuth routes
 oauth_bp = Blueprint('oauth', __name__)
@@ -34,7 +34,7 @@ def index():
     Main dashboard showing Garmin connection status and options.
     """
     current_user_id = get_current_user_id() 
-    row = get_token(current_user_id)
+    row = get_token_internal(current_user_id)
     html_template = """
     <!DOCTYPE html>
     <html>
@@ -147,7 +147,7 @@ def bind_email():
     """
     try:
         current_user_id = get_current_user_id()
-        token, secret = get_token(current_user_id)
+        token, secret = get_token_internal(current_user_id)
         if not token or not secret:
             return "No Garmin token found for the current user. Please authenticate first.", 400
         garmin_subscriber_id = garmin_module.garmin_client.fetch_garmin_user_id(token, secret)

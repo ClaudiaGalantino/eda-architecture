@@ -11,6 +11,7 @@ logger.setLevel(logging.INFO)
 
 # Import the necessary components
 from .routes.oauth_routes import oauth_bp 
+from .routes.garmin_routes import garmin_bp
 from .db_utils import init_db
 
 # Initialize the database
@@ -28,6 +29,6 @@ def create_app():
     
     # Blueprint registration
     app.register_blueprint(oauth_bp, url_prefix="/")
-    # app.register_blueprint(garmin_bp, url_prefix="/garmin") # todo
+    app.register_blueprint(garmin_bp, url_prefix="/garmin")
 
     return app
