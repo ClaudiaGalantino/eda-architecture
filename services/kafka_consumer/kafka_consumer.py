@@ -55,8 +55,10 @@ for var_name, var_value in {
         missing.append(var_name)
 
 if missing:
-    print(f"Missing or invalid environment variables: {', '.join(missing)}")
+    message = f"Environment variable(s) {', '.join(missing)} are missing or invalid."
+    log("SYSTEM - KAFKA_CONSUMER", message)
     sys.exit(1)
+
 
 # Parse topics
 kafka_topics = [t.strip() for t in kafka_topics_raw.split(',') if t.strip()]

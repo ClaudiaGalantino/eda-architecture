@@ -6,15 +6,25 @@ import os
 load_dotenv()
 logger = logging.getLogger(__name__)
 
-default_db = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'garmin_tokens.db'))
-db_name = os.getenv('DB_NAME') or default_db
+DB_FILENAME = os.getenv('DB_NAME') or 'garmin_tokens.db'
+DB_PATH = os.path.join('/app/data/', DB_FILENAME)
 
 def get_conn():
     """Return a sqlite3 connection using the configured DB path."""
-    path = os.path.abspath(db_name)
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    conn = sqlite3.connect(path)
+    abs_path = os.path.abspath(DB_PATH)
+    dir_path = os.path.dirname(DB_PATH)
+    logger.info(f"Using database at: {abs_path}")
+    logger.info(f"DB directory: {dir_path}, exists: {os.path.exists(dir_path)}, is_dir: {os.path.isdir(dir_path)}")
+    try:
+        os.makedirs(dir_path, exist_ok=True)
+        logger.info(f"makedirs succeeded for {dir_path}")
+    except Exception as e:
+        logger.error(f"makedirs failed for {dir_path}: {e}")
+        raise
+    logger.info(f"About to connect to: {DB_PATH}")
+    conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
+    logger.info(f"Connected successfully to: {DB_PATH}")
     return conn
 
 
@@ -39,7 +49,7 @@ def init_db():
     )
     conn.commit()
     conn.close()
-    logger.info(f"Database schemas initialized at: {os.path.abspath(db_name)}")
+    logger.info(f"Database schemas initialized at: {os.path.abspath(DB_PATH)}")
 
 
 def save_token(user_id, token, secret):

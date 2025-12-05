@@ -1,4 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
 from app.db_utils import *
 from app.processing.wearable_producer import send_data
 import app.garmin_client as garmin_module
@@ -69,8 +70,8 @@ async def fetch_data_from_garmin(token, secret, url):
     return resp
 
 
-async def process_ping(summary_name, callback_url, garmin_id):
-    logger.info(f"The summary is {summary_name} and the url is {callback_url}")
+async def process_ping(summary_type, callback_url, garmin_id):
+    logger.info(f"The summary is {summary_type} and the url is {callback_url}")
 
     token, secret = get_token(garmin_id)
     if not token or not secret:
@@ -90,12 +91,20 @@ async def process_ping(summary_name, callback_url, garmin_id):
             payload = resp.text
         logger.info(f"Fetched data for Garmin ID {garmin_id}; scheduling publish to Kafka")
         
+        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
         # Publish to Kafka in executor
+        kafka_payload = {
+            "summary_type": summary_type,
+            "garmin_id": garmin_id,
+            "timestamp": current_time,
+            "data": payload
+        }
         try:
-            await loop.run_in_executor(executor, send_data, summary_name, payload)
+            await loop.run_in_executor(executor, send_data, kafka_payload)
         except Exception as e:
             logger.error(f"Error sending data to Kafka: {e}")
     else:
         logger.warning(f"Fetch failed: status={resp.status_code} body={resp.text}")
 
-    print(f"The summary is {summary_name} and the url is {callback_url}")
+    print(f"The summary is {summary_type} and the url is {callback_url}")

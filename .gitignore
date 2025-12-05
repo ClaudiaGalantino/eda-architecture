@@ -13,12 +13,13 @@ services/*/env/
 *.log
 
 # Data files
-data/*
+data*/*
 
 # Test data 
-services/backend/sample_data/
+services/backend/sample_data*/
 
 # SQLite database
 *.db
 
+# Visual Studio Code settings
 .vscode/

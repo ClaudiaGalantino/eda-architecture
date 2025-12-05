@@ -6,6 +6,7 @@ from app.routes.garmin_routes import garmin_bp
 from dotenv import load_dotenv
 from app.db_utils import init_db
 from app.garmin_client import initialize_garmin_client
+from app.processing.wearable_producer import start_producer, close_producer
 
 load_dotenv() 
 
@@ -34,7 +35,11 @@ else:
 app.register_blueprint(oauth_bp, url_prefix="/")
 app.register_blueprint(garmin_bp, url_prefix="/garmin")
 
- # ADD THE NECESSARY PRODUCER LOGIC!!!!!!
+start_producer()
+
+@app.teardown_appcontext
+def shutdown_session(exception=None):
+    close_producer()
 
 if __name__ == '__main__':
     init_db()

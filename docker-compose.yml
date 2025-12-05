@@ -17,16 +17,16 @@ services:
   mosquitto:
     image: eclipse-mosquitto:latest
     container_name: mosquitto
-    volumes: 
+    volumes:
       - ./configs/mosquitto.conf:/mosquitto/config/mosquitto.conf
-      - mosquitto_data:/mosquitto/data
+      - ./data/mosquitto:/mosquitto/data
       - ./log/mosquitto:/mosquitto/log
     ports:
-      - "1883:1883"  
-      - "9001:9001" 
+      - "1883:1883"
+      - "9001:9001"
     stdin_open: true
     tty: true
-    restart: unless-stopped 
+    restart: unless-stopped
 
   # MQTT Subscriber
   mqtt_subscriber:
@@ -60,23 +60,16 @@ services:
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
       KAFKA_NUM_PARTITIONS: 3
       KAFKA_LOG_DIRS: /var/lib/kafka/data
+    ports:
+      - "9092:9092"
     volumes:
-      - kafka_data:/var/lib/kafka/data
+      - ./data/kafka_data:/var/lib/kafka/data
       - ./log/kafka:/var/lib/kafka/logs
     healthcheck:
-      test: ["CMD", "bash", "-c", "nc -z localhost 9092"]
+      test: [ "CMD", "bash", "-c", "nc -z localhost 9092" ]
       interval: 10s
       timeout: 5s
       retries: 20
-
-  # Garmin Data Processor
-  fit_processor:
-    image: fit-processing-service:latest
-    container_name: garmin_processor
-    ports:
-      - "8080:8080"
-    restart: unless-stopped
-    build: ./services/fit_processor
 
   # Backend Service
   backend:
@@ -88,12 +81,13 @@ services:
     depends_on:
       broker:
         condition: service_healthy
-      fit_processor:
-        condition: service_started
     volumes:
-      - ./data/garmin_fit_files:/app/data/garmin_fit_files
+      - ./services/backend/data:/app/data
     tty: true
+    ports:
+      - "5000:5000"
     stdin_open: true
+    command: [ "gunicorn", "--bind", "0.0.0.0:5000", "wsgi:app" ]
 
   # MongoDB Service
   mongo:
@@ -104,7 +98,7 @@ services:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME}
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
     volumes:
-    - mongo_data:/data/db
+      - ./data/mongo:/app/data
 
   # Mongo Express Service
   mongo-express:
@@ -140,9 +134,3 @@ services:
 networks:
   default:
     name: eda_network
-
-# Volumes for persistent data storage
-volumes:
-  mosquitto_data:
-  kafka_data:
-  mongo_data:

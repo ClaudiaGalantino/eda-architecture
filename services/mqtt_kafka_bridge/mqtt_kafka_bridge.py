@@ -17,7 +17,7 @@ def log (prefix, message):
     print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}][{prefix}] {message}")
 
 running = True
-def handle_shutdown(signum, frame):
+def handle_shutdown(signum):
     """
     Handle shutdown signals to gracefully stop the bridge.
     """
@@ -58,7 +58,8 @@ for var_name, var_value in {
         missing.append(var_name)
 
 if missing:
-    print(f"Missing or invalid environment variables: {', '.join(missing)}")
+    message = f"Environment variable(s) {', '.join(missing)} are missing or invalid."
+    log("SYSTEM - MQTT_KAFKA_BRIDGE", message)
     sys.exit(1)
 
 # MQTT client
@@ -88,7 +89,7 @@ def delivery_report(err, msg):
         log("KAFKA", f"Content: {json.dumps(json.loads(msg.value().decode('utf-8')), indent=2, ensure_ascii=False)}")
         log("KAFKA", f"Topic: {msg.topic()}, Partition: {msg.partition()}, Offset: {msg.offset()}")
 
-def on_connect(client, userdata, flags, rc, properties=None):
+def on_connect(client, rc):
     """
     Callback for MQTT connection.
     Args:
@@ -104,7 +105,7 @@ def on_connect(client, userdata, flags, rc, properties=None):
     else:
         log("MQTT", f"Failed to connect, return code {rc}")
 
-def on_message(client, userdata, msg):
+def on_message(msg):
     """
     Callback for MQTT message reception.
     Args:
