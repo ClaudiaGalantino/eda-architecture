@@ -1,7 +1,7 @@
 import paho.mqtt.client as mqtt
 from confluent_kafka import Producer
 from dotenv import load_dotenv
-from datetime import datetime
+from utils import *
 import os
 import sys
 import json
@@ -9,12 +9,6 @@ import signal
 import time
 
 load_dotenv()
-
-def log (prefix, message):
-    """
-    Simple logger function.
-    """
-    print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}][{prefix}] {message}")
 
 running = True
 def handle_shutdown(signum):

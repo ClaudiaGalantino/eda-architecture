@@ -1,22 +1,14 @@
 import json
 from confluent_kafka import Consumer, KafkaError
 from pymongo import MongoClient
-from dotenv import load_dotenv
-from datetime import datetime
+from utils import *
 import os
 import sys
 import signal
 
-load_dotenv()
-
-def log(prefix, message):
-    """
-    Simple logger function.
-    """
-    print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}][{prefix}] {message}")
 
 running = True
-def handle_shutdown(signum, frame):
+def handle_shutdown(signum):
     """
     Handle shutdown signals to gracefully stop the consumer.
     """

@@ -49,7 +49,7 @@ services:
     environment:
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
-      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://broker:9092
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
@@ -60,13 +60,14 @@ services:
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
       KAFKA_NUM_PARTITIONS: 3
       KAFKA_LOG_DIRS: /var/lib/kafka/data
+      KAFKA_OPTS: "-Djava.net.preferIPv4Stack=true"
     ports:
       - "9092:9092"
     volumes:
       - ./data/kafka_data:/var/lib/kafka/data
       - ./log/kafka:/var/lib/kafka/logs
     healthcheck:
-      test: [ "CMD", "bash", "-c", "nc -z localhost 9092" ]
+      test: [ "CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/9092'" ]
       interval: 10s
       timeout: 5s
       retries: 20
@@ -87,7 +88,7 @@ services:
     ports:
       - "5000:5000"
     stdin_open: true
-    command: [ "gunicorn", "--bind", "0.0.0.0:5000", "wsgi:app" ]
+    command: [ "gunicorn", "--bind", "0.0.0.0:5000", "--worker-class", "gevent", "wsgi:app" ]
 
   # MongoDB Service
   mongo:

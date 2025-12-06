@@ -1,18 +1,11 @@
 from confluent_kafka import Producer
 from dotenv import load_dotenv
-from datetime import datetime
-from flask import current_app
+from utils import *
 import json
 import os
 import sys
 
 load_dotenv()
-
-def log(prefix, message):
-    """
-    Simple logger function.
-    """
-    print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}][{prefix}] {message}")
 
 # Kafka setup
 kafka_broker = os.getenv('KAFKA_BROKER')
@@ -54,18 +47,17 @@ def start_producer():
     global producer
     if producer is None:
         producer = Producer(producer_conf)
-        log("KAFKA", "Producer started.")
+        log("KAFKA_W_PROD", "Producer started.")
 
 def delivery_report(err, msg):
     """
     Callback for message delivery reports.
     """
     if err is not None:
-        log("KAFKA", f"Message delivery failed: {err}")
+        log("KAFKA_W_PROD", f"Message delivery failed: {err}")
     else:
-        log("KAFKA", f"Message successfully delivered!")
-        log("KAFKA", f"Content: {json.dumps(json.loads(msg.value().decode('utf-8')), indent=2, ensure_ascii=False)}")
-        log("KAFKA", f"Topic: {msg.topic()}, Partition: {msg.partition()}, Offset: {msg.offset()}")
+        log("KAFKA_W_PROD", f"Message successfully delivered!")
+        log("KAFKA_W_PROD", f"Topic: {msg.topic()}, Partition: {msg.partition()}, Offset: {msg.offset()}")
 
 def close_producer():
     """
@@ -74,7 +66,7 @@ def close_producer():
     global producer
     if producer is not None:
         producer.flush(timeout=10)
-        log("KAFKA", "Producer flushed and closed.")
+        log("KAFKA_W_PROD", "Producer flushed and closed.")
         producer = None
 
 def send_data(record):
@@ -102,6 +94,5 @@ def send_data(record):
             callback=delivery_report
         )
         producer.poll(0)
-        log("KAFKA", f"Produced data!")
     except Exception as e:
-        log("KAFKA", f"Exception occurred: {e}")
+        log("KAFKA_W_PROD", f"Exception occurred: {e}")
