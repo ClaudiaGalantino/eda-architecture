@@ -85,11 +85,10 @@ def delivery_report(err, msg):
     Callback for message delivery reports.
     """
     if err is not None:
-        log("KAFKA", f"Message delivery failed: {err}")
+        log("MQTT_KAFKA_BRIDGE", f"Message delivery failed: {err}")
     else:
-        log("KAFKA", f"Message successfully delivered!")
-        log("KAFKA", f"Content: {json.dumps(json.loads(msg.value().decode('utf-8')), indent=2, ensure_ascii=False)}")
-        log("KAFKA", f"Topic: {msg.topic()}, Partition: {msg.partition()}, Offset: {msg.offset()}")
+        log("MQTT_KAFKA_BRIDGE", f"Message successfully delivered!")
+        log("MQTT_KAFKA_BRIDGE", f"Topic: {msg.topic()}, Partition: {msg.partition()}, Offset: {msg.offset()}")
 
 def on_connect(client, userdata, flags, rc, properties=None):
     """
