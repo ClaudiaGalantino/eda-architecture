@@ -1,11 +1,20 @@
 from confluent_kafka import Producer
+from datetime import datetime
+from zoneinfo import ZoneInfo
 from dotenv import load_dotenv
-from utils import *
 import json
 import os
 import sys
 
 load_dotenv()
+
+CET = ZoneInfo("Europe/Rome")
+def log(prefix, message):
+    """
+    Simple logger function.
+    """
+    print(f"[{datetime.now(CET).strftime('%Y-%m-%d %H:%M:%S')}][{prefix}] {message}")
+
 
 # Kafka setup
 kafka_broker = os.getenv('KAFKA_BROKER')

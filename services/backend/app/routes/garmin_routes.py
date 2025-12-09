@@ -1,5 +1,5 @@
-from flask import Blueprint, request, jsonify
 from ..db_utils import *
+from flask import Blueprint, request, jsonify
 import app.processing.process_data as process_data_module
 import asyncio
 

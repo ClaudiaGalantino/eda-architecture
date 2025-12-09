@@ -1,4 +1,4 @@
-from flask import Blueprint, jsonify, request, session, redirect, url_for, render_template_string
+from flask import Blueprint, request, session, redirect, url_for, render_template_string
 from venv import logger
 from app.db_utils import *
 import app.garmin_client as garmin_module

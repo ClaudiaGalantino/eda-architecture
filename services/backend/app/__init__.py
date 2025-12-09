@@ -1,4 +1,3 @@
-# __init__.py
 import os
 import logging
 from flask import Flask

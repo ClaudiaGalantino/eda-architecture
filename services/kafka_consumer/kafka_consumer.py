@@ -1,14 +1,22 @@
-import json
 from confluent_kafka import Consumer, KafkaError
 from pymongo import MongoClient
-from utils import *
+from datetime import datetime
+from zoneinfo import ZoneInfo
+import json
 import os
 import sys
 import signal
 
 
+CET = ZoneInfo("Europe/Rome")
+def log(prefix, message):
+    """
+    Simple logger function.
+    """
+    print(f"[{datetime.now(CET).strftime('%Y-%m-%d %H:%M:%S')}][{prefix}] {message}")
+
 running = True
-def handle_shutdown(signum):
+def handle_shutdown(signum, frame):
     """
     Handle shutdown signals to gracefully stop the consumer.
     """

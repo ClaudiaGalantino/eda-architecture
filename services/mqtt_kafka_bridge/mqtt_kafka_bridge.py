@@ -1,7 +1,8 @@
-import paho.mqtt.client as mqtt
 from confluent_kafka import Producer
+from datetime import datetime
+from zoneinfo import ZoneInfo
 from dotenv import load_dotenv
-from utils import *
+import paho.mqtt.client as mqtt
 import os
 import sys
 import json
@@ -10,8 +11,15 @@ import time
 
 load_dotenv()
 
+CET = ZoneInfo("Europe/Rome")
+def log(prefix, message):
+    """
+    Simple logger function.
+    """
+    print(f"[{datetime.now(CET).strftime('%Y-%m-%d %H:%M:%S')}][{prefix}] {message}")
+
 running = True
-def handle_shutdown(signum):
+def handle_shutdown(signum, frame):
     """
     Handle shutdown signals to gracefully stop the bridge.
     """
@@ -83,7 +91,7 @@ def delivery_report(err, msg):
         log("KAFKA", f"Content: {json.dumps(json.loads(msg.value().decode('utf-8')), indent=2, ensure_ascii=False)}")
         log("KAFKA", f"Topic: {msg.topic()}, Partition: {msg.partition()}, Offset: {msg.offset()}")
 
-def on_connect(client, rc):
+def on_connect(client, userdata, flags, rc, properties=None):
     """
     Callback for MQTT connection.
     Args:
@@ -99,7 +107,7 @@ def on_connect(client, rc):
     else:
         log("MQTT", f"Failed to connect, return code {rc}")
 
-def on_message(msg):
+def on_message(client, userdata, msg):
     """
     Callback for MQTT message reception.
     Args:

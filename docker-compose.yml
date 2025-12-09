@@ -99,7 +99,7 @@ services:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME}
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
     volumes:
-      - ./data/mongo:/app/data
+      - ./data/mongo_db:/data/db
 
   # Mongo Express Service
   mongo-express:

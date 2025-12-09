@@ -1,5 +1,6 @@
 from datetime import datetime
 from dotenv import load_dotenv
+from zoneinfo import ZoneInfo
 import paho.mqtt.client as mqtt
 import json
 import time
@@ -59,7 +60,8 @@ for _ in range(60):
 
 try: 
     while True:
-        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        CET = ZoneInfo('Europe/Rome')
+        current_time = datetime.now(CET).strftime("%Y-%m-%d %H:%M:%S")
 
         # data collection
         try:

@@ -1,5 +1,6 @@
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from app.db_utils import *
 from app.processing.wearable_producer import send_data
 import app.garmin_client as garmin_module
@@ -8,6 +9,7 @@ import threading
 import logging
 
 logger = logging.getLogger(__name__)
+CET = ZoneInfo('Europe/Rome')
 
 # Global variables for the event loop and executor
 loop = asyncio.new_event_loop()
@@ -91,7 +93,7 @@ async def process_ping(summary_type, callback_url, garmin_id):
             payload = resp.text
         logger.info(f"Fetched data for Garmin ID {garmin_id}; scheduling publish to Kafka")
         
-        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        current_time = datetime.now(CET).strftime("%Y-%m-%d %H:%M:%S")
 
         # Publish to Kafka in executor
         kafka_payload = {
