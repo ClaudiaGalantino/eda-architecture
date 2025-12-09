@@ -81,7 +81,6 @@ eda-architecture/
 │       ├── mqtt_kafka_bridge.py
 │       ├── env.example
 │       └── requirements.txt
-├── utils.py                     # Shared utilities
 ├── .gitignore
 └── README.md
 ```
