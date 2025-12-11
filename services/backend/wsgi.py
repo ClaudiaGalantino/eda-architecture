@@ -1,5 +1,3 @@
-import os
-import logging
 from flask import Flask
 from app.routes.oauth_routes import oauth_bp
 from app.routes.garmin_routes import garmin_bp
@@ -7,6 +5,7 @@ from dotenv import load_dotenv
 from app.db_utils import init_db
 from app.garmin_client import initialize_garmin_client
 from app.processing.wearable_producer import start_producer, close_producer
+import os, logging, atexit
 
 load_dotenv() 
 
@@ -37,9 +36,7 @@ app.register_blueprint(garmin_bp, url_prefix="/garmin")
 
 start_producer()
 
-@app.teardown_appcontext
-def shutdown_session(exception=None):
-    close_producer()
+atexit.register(close_producer)
 
 if __name__ == '__main__':
     init_db()

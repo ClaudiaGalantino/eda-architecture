@@ -22,5 +22,4 @@ COPY . .
 EXPOSE 5000
 
 # Command to start the application with Gunicorn
-# The entrypoint is wsgi:app, where 'wsgi' is the wsgi.py file and 'app' is the Flask app object
 CMD ["gunicorn", "--bind", "0.0.0.0:5000", "wsgi:app"]

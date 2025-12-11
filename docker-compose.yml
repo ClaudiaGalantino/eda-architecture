@@ -83,7 +83,7 @@ services:
       broker:
         condition: service_healthy
     volumes:
-      - ./services/backend/data:/app/data
+      - ./data/backend:/app/data
     tty: true
     ports:
       - "5000:5000"

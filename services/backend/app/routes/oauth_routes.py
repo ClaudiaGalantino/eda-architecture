@@ -131,7 +131,8 @@ def callback():
         
         logger.info(f"Garmin Subscriber ID (Webhook Key) obtained: {garmin_subscriber_id}")
 
-        save_token(current_user_id, acc_token, acc_secret)        
+        save_token_by_garmin_id(garmin_subscriber_id, acc_token, acc_secret, current_user_id)
+        # Redirect to the email binding page after successful OAuth
         return redirect(url_for('oauth.index'))
     
     except Exception as e:
@@ -169,7 +170,13 @@ def done():
     """
     Simple confirmation page after successful Garmin linking.
     """
-    email = get_email(get_current_user_id())
+    current_user_id = get_current_user_id()
+    token, secret = get_token_internal(current_user_id)
+    if not token or not secret:
+        return "No Garmin token found. Please authenticate first.", 400
+    
+    garmin_subscriber_id = garmin_module.garmin_client.fetch_garmin_user_id(token, secret)
+    email = get_email(garmin_subscriber_id)
     html = f"""<!DOCTYPE html>
     <html>
     <head>

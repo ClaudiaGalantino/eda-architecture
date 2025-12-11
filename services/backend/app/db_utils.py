@@ -5,23 +5,28 @@ import os
 
 load_dotenv()
 logger = logging.getLogger(__name__)
+_data_initilized = False
 
 DB_FILENAME = os.getenv('DB_NAME') or 'garmin_tokens.db'
 DB_PATH = os.path.join('/app/data/', DB_FILENAME)
 
 def get_conn():
     """Return a sqlite3 connection using the configured DB path."""
+    global _data_initilized
     abs_path = os.path.abspath(DB_PATH)
     dir_path = os.path.dirname(DB_PATH)
-    logger.info(f"Using database at: {abs_path}")
-    logger.info(f"DB directory: {dir_path}, exists: {os.path.exists(dir_path)}, is_dir: {os.path.isdir(dir_path)}")
-    try:
-        os.makedirs(dir_path, exist_ok=True)
-        logger.info(f"makedirs succeeded for {dir_path}")
-    except Exception as e:
-        logger.error(f"makedirs failed for {dir_path}: {e}")
-        raise
-    logger.info(f"About to connect to: {DB_PATH}")
+
+    if not _data_initilized:
+        logger.info(f"Using database at: {abs_path}")
+        logger.info(f"DB directory: {dir_path}, exists: {os.path.exists(dir_path)}, is_dir: {os.path.isdir(dir_path)}")
+        try:
+            os.makedirs(dir_path, exist_ok=True)
+            logger.info(f"makedirs succeeded for {dir_path}")
+        except Exception as e:
+            logger.error(f"makedirs failed for {dir_path}: {e}")
+            raise
+        
+        _data_initilized = True
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     logger.info(f"Connected successfully to: {DB_PATH}")
@@ -35,7 +40,8 @@ def init_db():
     c = conn.cursor()
     c.execute(
         '''CREATE TABLE IF NOT EXISTS tokens (
-            user_id TEXT PRIMARY KEY,
+            garmin_subscriber_id TEXT PRIMARY KEY,
+            session_id TEXT UNIQUE,
             oauth_token TEXT,
             oauth_token_secret TEXT
         )'''
@@ -43,8 +49,7 @@ def init_db():
     c.execute(
         '''CREATE TABLE IF NOT EXISTS user_mappings (
             garmin_subscriber_id TEXT PRIMARY KEY,
-            user_email TEXT,
-            internal_user_id TEXT UNIQUE
+            user_email TEXT
         )'''
     )
     conn.commit()
@@ -52,67 +57,66 @@ def init_db():
     logger.info(f"Database schemas initialized at: {os.path.abspath(DB_PATH)}")
 
 
-def save_token(user_id, token, secret):
+def save_token_by_garmin_id(garmin_subscriber_id, token, secret, session_id):
     """
-    Save or update the OAuth token and secret for a given internal user ID.
+    Save or update the OAuth token and secret using the Garmin ID as primary key.
     """
     conn = get_conn()
     c = conn.cursor()
-    stmt = 'INSERT OR REPLACE INTO tokens (user_id, oauth_token, oauth_token_secret) VALUES (?, ?, ?)'
-    params = (user_id, token, secret)
+    stmt = '''
+        INSERT OR REPLACE INTO tokens (garmin_subscriber_id, oauth_token, oauth_token_secret, session_id) 
+        VALUES (?, ?, ?, ?)
+    '''
+    params = (garmin_subscriber_id, token, secret, session_id)
     c.execute(stmt, params)
     conn.commit()
     conn.close()
-    logger.info(f"Saved/Updated OAuth token for internal user: {user_id}")
+    logger.info(f"Saved/Updated OAuth token for Garmin ID: {garmin_subscriber_id}")
 
 
-def get_token_internal(internal_user_id):
-    """Retrieve the OAuth token and secret for a given internal user ID."""
+def get_token_internal(session_id):
+    """
+    Retrieve the OAuth token and secret for a given session ID.
+    Uses the user_mappings table to find the associated Garmin ID.
+    """
     conn = get_conn()
     c = conn.cursor()
-    stmt = 'SELECT oauth_token, oauth_token_secret FROM tokens WHERE user_id = ?'
-    c.execute(stmt, (internal_user_id,))
-    row = c.fetchone()
+    stmt_token = 'SELECT oauth_token, oauth_token_secret FROM tokens WHERE session_id = ?'
+    c.execute(stmt_token, (session_id,))
+    token_row = c.fetchone()
     conn.close()
-    return (row['oauth_token'], row['oauth_token_secret']) if row else None
+    return (token_row['oauth_token'], token_row['oauth_token_secret']) if token_row else None
 
 
 def get_token(garmin_id):
     """Retrieve the OAuth token and secret for a given garmin user ID."""
     conn = get_conn()
     c = conn.cursor()
-    stmt = 'SELECT internal_user_id FROM user_mappings WHERE garmin_subscriber_id = ?'
+    stmt = 'SELECT oauth_token, oauth_token_secret FROM tokens WHERE garmin_subscriber_id = ?'
     c.execute(stmt, (garmin_id,))
-    row = c.fetchone()
-    if not row:
-        conn.close()
-        return None
-    internal_user_id = row['internal_user_id']
-    stmt = 'SELECT oauth_token, oauth_token_secret FROM tokens WHERE user_id = ?'
-    c.execute(stmt, (internal_user_id,))
     row = c.fetchone()
     conn.close()
     return (row['oauth_token'], row['oauth_token_secret']) if row else None
 
 
-def save_garmin_mapping(garmin_subscriber_id, user_email, internal_user_id):
-    """Save or update the mapping between Garmin subscriber ID and internal user ID."""
+def save_garmin_mapping(garmin_subscriber_id, user_email, session_id):
+    """Save or update the mapping between Garmin subscriber ID and user email."""
     conn = get_conn()
     c = conn.cursor()
-    stmt = '''INSERT OR REPLACE INTO user_mappings (garmin_subscriber_id, user_email, internal_user_id) VALUES (?, ?, ?)'''
-    params = (garmin_subscriber_id, user_email, internal_user_id)
+    stmt = '''INSERT OR REPLACE INTO user_mappings (garmin_subscriber_id, user_email) VALUES (?, ?)'''
+    params = (garmin_subscriber_id, user_email)
     c.execute(stmt, params)
     conn.commit()
     conn.close()
-    logger.info(f"Saved mapping: Garmin ID {garmin_subscriber_id}, Email {user_email} -> Internal ID {internal_user_id}")
+    logger.info(f"Saved mapping: Garmin ID {garmin_subscriber_id}, Email {user_email}")
 
 
-def get_email(user_id):
+def get_email(garmin_id):
     """Retrieve the email associated with a given internal user ID."""
     conn = get_conn()
     c = conn.cursor()
-    stmt = 'SELECT user_email FROM user_mappings WHERE internal_user_id = ?'
-    c.execute(stmt, (user_id,))
+    stmt = 'SELECT user_email FROM user_mappings WHERE garmin_subscriber_id = ?'
+    c.execute(stmt, (garmin_id,))
     row = c.fetchone()
     conn.close()
     return row['user_email'] if row else None
@@ -125,22 +129,16 @@ def delete_user(user_id):
     conn = get_conn()
     c = conn.cursor()
     try:
-        # Step 1: Find internal user ID
-        stmt = 'SELECT internal_user_id FROM user_mappings WHERE garmin_subscriber_id = ?'
+        # Delete token from tokens table
+        stmt = 'DELETE FROM tokens WHERE garmin_subscriber_id = ?'
         c.execute(stmt, (user_id,))
-        row = c.fetchone()
-        if not row:
-            return {'tokens_deleted': 0, 'mappings_deleted': 0}
-
-        internal_user_id = row['internal_user_id']
-
-        # Step 2: Delete token from tokens table
-        stmt = 'DELETE FROM tokens WHERE user_id = ?'
-        c.execute(stmt, (internal_user_id,))
         tokens_deleted = c.rowcount
+        
+        # Delete mapping from user_mappings table
         stmt = 'DELETE FROM user_mappings WHERE garmin_subscriber_id = ?'
         c.execute(stmt, (user_id,))
         mappings_deleted = c.rowcount
+        
         conn.commit()
         logger.info(f"Deleted user {user_id}: tokens_deleted={tokens_deleted}, mappings_deleted={mappings_deleted}")
         return {'tokens_deleted': tokens_deleted, 'mappings_deleted': mappings_deleted}

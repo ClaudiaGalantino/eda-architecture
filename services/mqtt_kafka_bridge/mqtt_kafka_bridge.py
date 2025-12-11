@@ -121,7 +121,7 @@ def on_message(client, userdata, msg):
     try:
 
         data_received = json.loads(payload)
-        log("MQTT", f"JSON message received on topic {msg.topic}:\n{json.dumps(data_received, indent=2, ensure_ascii=False)}")
+        log("MQTT", f"JSON message received on topic {msg.topic}")
         
         # convert to bytes, handle missing key
         key = data_received.get("room_name")
