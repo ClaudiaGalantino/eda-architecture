@@ -16,6 +16,5 @@ COPY kafka_consumer.py .
 # Force Python to flush print output immediately
 ENV PYTHONUNBUFFERED=1
 
-# Run the producer automatically when the container starts?
-# execute the producer when called
+# Run the consumer automatically when the container starts
 CMD ["python", "kafka_consumer.py"]

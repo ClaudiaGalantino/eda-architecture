@@ -23,3 +23,5 @@ services/backend/sample_data*/
 
 # Visual Studio Code settings
 .vscode/
+
+services/fit_processor

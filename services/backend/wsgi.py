@@ -34,12 +34,19 @@ else:
 app.register_blueprint(oauth_bp, url_prefix="/")
 app.register_blueprint(garmin_bp, url_prefix="/garmin")
 
+# DB is initialized in WAL mode at startup
+try:
+      init_db()
+      logger.info("Database initialized on app startup (WAL enabled)")
+except Exception as e:
+      logger.warning(f"Database init on startup failed: {e}")
+
 start_producer()
 
 atexit.register(close_producer)
 
 if __name__ == '__main__':
     init_db()
-    print("Database initialized (Tokens only).")
+    print("Database initialized.")
     print("Starting Flask server on http://localhost:5000")
     app.run(debug=True, port=port, host='0.0.0.0')

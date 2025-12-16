@@ -29,6 +29,11 @@ def get_conn():
         _data_initilized = True
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
+    try:
+        # C
+        conn.execute('PRAGMA busy_timeout=5000')
+    except Exception:
+        pass
     logger.info(f"Connected successfully to: {DB_PATH}")
     return conn
 
@@ -38,6 +43,14 @@ def init_db():
     Initialise the SQLite database with necessary tables.'''
     conn = get_conn()
     c = conn.cursor()
+    # Ensure WAL mode so other containers can read while it writes
+    try:
+        c.execute('PRAGMA journal_mode=WAL')
+        c.execute('PRAGMA synchronous=NORMAL')
+        c.execute('PRAGMA wal_autocheckpoint=1000')
+        logger.info("SQLite PRAGMAs applied: WAL, synchronous=NORMAL, wal_autocheckpoint=1000")
+    except Exception as e:
+        logger.warning(f"Failed to apply SQLite PRAGMAs for WAL: {e}")
     c.execute(
         '''CREATE TABLE IF NOT EXISTS tokens (
             garmin_subscriber_id TEXT PRIMARY KEY,
