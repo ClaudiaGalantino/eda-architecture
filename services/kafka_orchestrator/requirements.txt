@@ -1,0 +1,6 @@
+confluent-kafka==2.12.2
+dnspython==2.8.0
+dotenv==0.9.9
+hiredis==3.3.0
+python-dotenv==1.2.1
+redis==7.1.0
