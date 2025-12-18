@@ -131,6 +131,47 @@ services:
     tty: true
     stdin_open: true
 
+  # User Presence Sercice
+  user_presence:
+    build: ./services/user_presence_prod
+    container_name: user_presence
+    env_file:
+      - ./services/kafka_orchestrator/.env
+    restart: unless-stopped
+    depends_on:
+      broker:
+        condition: service_healthy
+    tty: true
+    stdin_open: true
+
+  # Orchestrator Service
+  orchestrator:
+    build: ./services/kafka_orchestrator
+    container_name: orchestrator
+    env_file:
+      - ./services/kafka_orchestrator/.env
+    restart: unless-stopped
+    depends_on:
+      broker:
+        condition: service_healthy
+      cache:
+        condition: service_started
+    tty: true
+    stdin_open: true
+    volumes:
+      - ./data/backend:/app/backend_data:ro
+      - ./data/orchestrator:/app/orchestrator_data
+
+  # Cache Service (Redis)
+  cache:
+    image: redis:latest
+    container_name: cache
+    ports:
+      - "6379:6379"
+    volumes:
+      - ./data/redis:/data
+    restart: unless-stopped
+
 # Custom network for the EDA architecture
 networks:
   default:

@@ -11,10 +11,10 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy subscriber script
-COPY . .
+COPY users_presence.py .
 
 # Force Python to flush print output immediately
 ENV PYTHONUNBUFFERED=1
 
-# Command to run the orchestrator service
-CMD ["python", "orchestrator.py"]
+# Command to run the presence producer
+CMD ["python", "-u", "users_presence.py"] 
