@@ -39,6 +39,9 @@ services:
         condition: service_started
     env_file:
       - ./services/mqtt_kafka_bridge/.env
+      - ./.env
+    tty: true
+    stdin_open: true
     restart: unless-stopped
 
   # Kafka Broker
@@ -78,6 +81,7 @@ services:
     build: ./services/backend
     env_file:
       - ./services/backend/.env
+      - ./.env
     restart: unless-stopped
     depends_on:
       broker:
@@ -122,6 +126,7 @@ services:
     container_name: kafka_consumer
     env_file:
       - ./services/kafka_consumer/.env
+      - ./.env
     restart: unless-stopped
     depends_on:
       broker:
@@ -131,12 +136,13 @@ services:
     tty: true
     stdin_open: true
 
-  # User Presence Sercice
+  # User Presence Service
   user_presence:
     build: ./services/user_presence_prod
     container_name: user_presence
     env_file:
       - ./services/kafka_orchestrator/.env
+      - ./.env
     restart: unless-stopped
     depends_on:
       broker:
@@ -150,6 +156,7 @@ services:
     container_name: orchestrator
     env_file:
       - ./services/kafka_orchestrator/.env
+      - ./.env
     restart: unless-stopped
     depends_on:
       broker:
