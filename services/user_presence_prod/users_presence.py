@@ -145,5 +145,5 @@ def cli_interface():
     producer.flush()
     log("SYSTEM", "User Presence CLI stopped.")
 
-    if __name__ == '__main__':
-        cli_interface()
+if __name__ == '__main__':
+    cli_interface()
