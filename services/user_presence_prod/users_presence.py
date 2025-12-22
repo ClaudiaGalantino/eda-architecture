@@ -28,8 +28,8 @@ signal.signal(signal.SIGTERM, handle_shutdown)
 
 # Kafka setup
 kafka_broker = os.getenv('KAFKA_BROKER')
-kafka_topic = os.getenv('KAFKA_TOPIC')
-kafka_client_id = os.getenv('KAFKA_CLIENT_ID')
+kafka_topic = os.getenv('KAFKA_TOPIC_USER_PROD')
+kafka_client_id = os.getenv('KAFKA_CLIENT_ID_USER_PROD')
 kafka_acks = os.getenv('KAFKA_ACKS', 'all')
 kafka_retries = int(os.getenv('KAFKA_RETRIES', 5))
 rooms_list_raw = os.getenv('ROOMS_LIST')

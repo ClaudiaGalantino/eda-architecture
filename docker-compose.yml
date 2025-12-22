@@ -39,7 +39,19 @@ services:
         condition: service_started
     env_file:
       - ./services/mqtt_kafka_bridge/.env
+    tty: true
+    stdin_open: true
+    restart: unless-stopped
+
+  # MQTT Publisher (Raspberry starter)
+  edge_command:
+    build: ./edge
+    container_name: edge_command
+    env_file:
       - ./.env
+    depends_on:
+      mosquitto:
+        condition: service_started
     tty: true
     stdin_open: true
     restart: unless-stopped
@@ -81,7 +93,6 @@ services:
     build: ./services/backend
     env_file:
       - ./services/backend/.env
-      - ./.env
     restart: unless-stopped
     depends_on:
       broker:
@@ -126,7 +137,6 @@ services:
     container_name: kafka_consumer
     env_file:
       - ./services/kafka_consumer/.env
-      - ./.env
     restart: unless-stopped
     depends_on:
       broker:
@@ -142,7 +152,6 @@ services:
     container_name: user_presence
     env_file:
       - ./services/kafka_orchestrator/.env
-      - ./.env
     restart: unless-stopped
     depends_on:
       broker:
@@ -151,23 +160,23 @@ services:
     stdin_open: true
 
   # Orchestrator Service
-  orchestrator:
-    build: ./services/kafka_orchestrator
-    container_name: orchestrator
-    env_file:
-      - ./services/kafka_orchestrator/.env
-      - ./.env
-    restart: unless-stopped
-    depends_on:
-      broker:
-        condition: service_healthy
-      cache:
-        condition: service_started
-    tty: true
-    stdin_open: true
-    volumes:
-      - ./data/backend:/app/backend_data:ro
-      - ./data/orchestrator:/app/orchestrator_data
+  # # Orchestrator Service
+  # orchestrator:
+  #   build: ./services/kafka_orchestrator
+  #   container_name: orchestrator
+  #   env_file:
+  #     - ./services/kafka_orchestrator/.env
+  #   restart: unless-stopped
+  #   depends_on:
+  #     broker:
+  #       condition: service_healthy
+  #     cache:
+  #       condition: service_started
+  #   tty: true
+  #   stdin_open: true
+  #   volumes:
+  #     - ./data/backend:/app/backend_data:ro
+  #     - ./data/orchestrator:/app/orchestrator_data
 
   # Cache Service (Redis)
   cache:
