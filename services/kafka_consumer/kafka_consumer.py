@@ -83,7 +83,6 @@ class KafkaMongoConsumer:
         # Parse allowed Garmin IDs
         if self.allowed_garmin_ids_raw:
             self.allowed_garmin_ids = [gid.strip() for gid in self.allowed_garmin_ids_raw.split(',') if gid.strip()]
-            log("SYSTEM - KAFKA_CONSUMER", f"Filtering wearable data for Garmin IDs: {self.allowed_garmin_ids}")
         else:
             log("SYSTEM - KAFKA_CONSUMER", "No ALLOWED_GARMIN_IDS configured, all wearable data will be saved.")
     

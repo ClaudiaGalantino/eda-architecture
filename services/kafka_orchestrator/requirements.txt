@@ -2,5 +2,12 @@ confluent-kafka==2.12.2
 dnspython==2.8.0
 dotenv==0.9.9
 hiredis==3.3.0
+numpy==2.4.0
+pandas==2.3.3
+pymongo==4.16.0
+python-dateutil==2.9.0.post0
 python-dotenv==1.2.1
+pytz==2025.2
 redis==7.1.0
+six==1.17.0
+tzdata==2025.3

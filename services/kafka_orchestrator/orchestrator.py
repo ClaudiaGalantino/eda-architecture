@@ -1,10 +1,12 @@
 from confluent_kafka import Producer, Consumer, KafkaError
+from datetime import datetime, timezone, timedelta
 from db_utils_orch import *
 from redis import Redis
+from pymongo import MongoClient
 from dotenv import load_dotenv
-from datetime import datetime
 from zoneinfo import ZoneInfo
 import os, signal, sys, json
+import pandas as pd
 
 load_dotenv()
 
@@ -15,24 +17,32 @@ def log(prefix, message):
     """
     print(f"[{datetime.now(CET).strftime('%Y-%m-%d %H:%M:%S')}][{prefix}] {message}")
 
+# ------------------------------------------------------ ORCHESTRATOR CLASS --------------------------------------------------------
+
 class Orchestrator:
     """
     Kafka Orchestrator for handling presence updates and intelligent functionalities.
     """
 
     def __init__(self):
-        """Initialize orchestrator configuration from environment variables."""
+        """Initialize orchestrator configuration from environment variables."""       
         self.running = True
         self.consumer = None
         self.redis_client = None
+        self.mongo_client = None
+        self.mongo_db = None
+        self.producer = None
         self.COMMIT_BATCH_SIZE = 50
-        
+        self.WORKING_HOURS= [(9,12), (14,18)] # 9AM-12PM and 2PM-6PM
+
         # Load environment variables
         self._load_env_config()
-        
+
         # Setup signal handlers
         signal.signal(signal.SIGINT, self._handle_shutdown)
         signal.signal(signal.SIGTERM, self._handle_shutdown)
+
+# -------------------------------------------------- LOAD ENV VARS AND VALIDATE -------------------------------------------------
 
     def _load_env_config(self):
         """Load and validate environment variables."""
@@ -40,35 +50,45 @@ class Orchestrator:
         self.redis_port = int(os.getenv('REDIS_PORT', 6379))
         self.redis_password = os.getenv('REDIS_PASSWORD')
 
+        self.mongo_uri = os.getenv('MONGO_URI')
+        self.mongo_db_name = os.getenv('MONGO_DB_NAME')
+
+        self.rooms_list_raw = os.getenv('ROOMS_LIST')
+        self.users_email_list_raw = os.getenv('USER_EMAILS_LIST')
+
         self.kafka_broker = os.getenv('KAFKA_BROKER')
         self.kafka_topics_raw = os.getenv('KAFKA_TOPICS')
         self.kafka_group_id = os.getenv('KAFKA_GROUP_ID')
-        self.kafka_cons_client_id = os.getenv('KAFKA_CONSUMER_CLIENT_ID')
+        self.kafka_consumer_client_id = os.getenv('KAFKA_CONSUMER_CLIENT_ID')
         self.kafka_auto_commit = os.getenv('KAFKA_AUTO_COMMIT', 'False').lower() in ('true', '1', 't')
 
-        self.kafka_topic_enriched = os.getenv('KAFKA_ENRICHED_TOPIC')
-        self.topic_trigger = os.getenv('KAFKA_TRIGGER_TOPIC')
+        self.kafka_trigger_client_id = os.getenv('KAFKA_TR_CLIENT_ID')
+        self.kafka_trigger_topic = os.getenv('KAFKA_TRIGGER_TOPIC')
+
         self.kafka_prod_client_id = os.getenv('KAFKA_EN_CLIENT_ID')
+        self.topic_enriched_raw = os.getenv('KAFKA_ENRICHED_TOPICS')
+
         self.kafka_acks = os.getenv('KAFKA_ACKS', 'all')
         self.kafka_retries = int(os.getenv('KAFKA_RETRIES', 5))
-
-        self.topic_enriched_raw = os.getenv('KAFKA_ENRICHED_TOPIC')
-        self.rooms_list_raw = os.getenv('ROOMS_LIST')
-        self.users_email_list_raw = os.getenv('USER_EMAILS_LIST')
 
         # Validate environment variables
         missing = []
         for var_name, var_value in {
+            "REDIS_HOST": self.redis_host,
+            "REDIS_PASSWORD": self.redis_password,
+            "MONGO_URI": self.mongo_uri,
+            "MONGO_DB_NAME": self.mongo_db_name,
+            "ROOMS_LIST": self.rooms_list_raw,
+            "USER_EMAILS_LIST": self.users_email_list_raw,
             "KAFKA_BROKER": self.kafka_broker,
             "KAFKA_TOPICS": self.kafka_topics_raw,
             "KAFKA_GROUP_ID": self.kafka_group_id,
-            "KAFKA_CLIENT_ID": self.kafka_client_id,
-            "REDIS_HOST": self.redis_host,
-            "REDIS_PASSWORD": self.redis_password,
-            "KAFKA_ENRICHED_TOPIC": self.topic_enriched_raw,
-            "ROOMS_LIST": self.rooms_list_raw,
-            "USER_EMAILS_LIST": self.users_email_list_raw
-        }.items():
+            "KAFKA_CONSUMER_CLIENT_ID": self.kafka_consumer_client_id,
+            "KAFKA_TR_CLIENT_ID": self.kafka_trigger_client_id,
+            "KAFKA_TRIGGER_TOPIC": self.kafka_trigger_topic,
+            "KAFKA_EN_CLIENT_ID": self.kafka_prod_client_id,
+            "KAFKA_ENRICHED_TOPICS": self.topic_enriched_raw,
+            }.items():
             if not var_value:
                 missing.append(var_name)
 
@@ -89,23 +109,37 @@ class Orchestrator:
             log("SYSTEM - ORCHESTRATOR", message)
             sys.exit(1)
 
+# ------------------------------------------------------ SIGNAL HANDLERS ----------------------------------------------------------
+
     def _handle_shutdown(self, signum, frame):
         """Handle shutdown signals to gracefully stop the consumer."""
         log("SYSTEM", f"Shutdown signal {signum} received. Stopping...")
         self.running = False
 
+# ------------------------------------------------------ SETUP COMPONENTS ---------------------------------------------------------
+  
     def _redis_setup(self):
         """Setup Redis client."""
-        redis_host = self.redis_host
-        redis_port = self.redis_port
-        redis_password = self.redis_password
-        
-        self.redis_client = Redis(
-            host=redis_host,
-            port=redis_port,
-            password=redis_password,
-            decode_responses=True
-        )
+        try:
+            self.redis_client = Redis(
+                host=self.redis_host,
+                port=self.redis_port,
+                password=self.redis_password,
+                decode_responses=True
+            )
+        except Exception as e:
+            log("KAFKA_ORCHESTRATOR", f"Failed to connect to Redis: {e}")
+            sys.exit(1)
+
+    def _mongo_setup(self):
+        """Setup MongoDB client."""
+        try:
+            self.mongo_client = MongoClient(self.mongo_uri)
+            self.mongo_db = self.mongo_client[self.mongo_db_name]
+            log("KAFKA_ORCHESTRATOR", f"Connected to MongoDB database '{self.mongo_db_name}'")
+        except Exception as e:
+            log("KAFKA_ORCHESTRATOR", f"Failed to connect to MongoDB: {e}")
+            sys.exit(1)
 
     def _setup_kafka_consumer(self):
         """Setup Kafka consumer."""
@@ -152,13 +186,15 @@ class Orchestrator:
             log("USER_PRESENCE", f"Message successfully delivered!")
             log("USER_PRESENCE", f"Topic: {msg.topic()}, Partition: {msg.partition()}, Offset: {msg.offset()}")
 
+# ------------------------------------------------------ PRESENCE UPDATES --------------------------------------------------------
+
     def _handle_presence_update(self, msg):
         """
         Handle presence update messages.
 
         Args:
-            msg: Kafka message containing presence update.
-                """
+        msg: Kafka message containing presence update.
+            """
         if msg.error():
             if msg.error().code() == KafkaError._PARTITION_EOF:
                 log("KAFKA_CONSUMER", f"End of partition reached {msg.topic()} [{msg.partition()}]")
@@ -170,7 +206,7 @@ class Orchestrator:
             room = data.get("room")
             user_email = data.get("user_email", [])
             status = data.get("status")
-            
+        
             if room and user_email and status in ["ENTER", "EXIT"]:
                 garmin_id = get_garmin_id_by_email(user_email)
                 
@@ -184,12 +220,13 @@ class Orchestrator:
                     # add garmin id associated to the room which is the key of the set
                     self.redis_client.sadd(f"room_presence:{room}", garmin_id)
                     self.redis_client.set(f"garmin_room:{garmin_id}", room)
-
-                log("KAFKA_ORCHESTRATOR", f"Updated room '{room}' with users: '{self.redis_client.get(room)}")
+                    log("KAFKA_ORCHESTRATOR", f"Updated room '{room}' with users: '{self.redis_client.get(room)}")
             else:
                 log("KAFKA_ORCHESTRATOR", f"Invalid presence update message: {data}")
         except Exception as e:
             log("KAFKA_ORCHESTRATOR", f"Failed to process presence update message: {e}")
+
+# ------------------------------------------------------ DATA ENRICHMENT --------------------------------------------------------
 
     def _enrich_data_wearable(self, msg):
         """
@@ -198,65 +235,56 @@ class Orchestrator:
         Args:
             msg: Kafka message object
         Returns:
-            Enriched data dictionary
+            Tuple of (enriched_data, error) - enriched_data is None if error occurred
         """
-        garmin_id = msg.get('garmin_id')
-
-        if not garmin_id:
-            return None
-        
-        # caso wearable data
-        room = self.redis_client.get(f"garmin_room:{garmin_id}")    
-        
         try:
             data = json.loads(msg.value().decode('utf-8'))
+            garmin_id = data.get('garmin_id')
+            if not garmin_id:
+                return None, "Missing garmin_id in message"
+            room = self.redis_client.get(f"garmin_room:{garmin_id}")  
             data['user_room'] = room
-            return data
+            log("KAFKA_ORCHESTRATOR", f"Enriched wearable data for garmin_id '{garmin_id}' with room: {room}")
+            return data, None
         except Exception as e:
-            log("KAFKA_ORCHESTRATOR", f"Failed to enrich message data: {e}")
-            return None
-        
+            log("KAFKA_ORCHESTRATOR", f"Failed to enrich wearable message data: {e}")
+        return None, str(e)
+    
     def _enrich_data_ambient(self, msg):
         """
         Enrich ambient message data with additional information.
-
         Args:
             msg: Kafka message object
         Returns:
-            Enriched data dictionary
+            Tuple of (enriched_data, error) - enriched_data is None if error occurred
         """
-        room = msg.get('room')
-
-        if not room:
-            return None
         try:
             data = json.loads(msg.value().decode('utf-8'))
+            room = data.get('room_name')
+            if not room:
+                return None, "Missing room_name in message"        
             users_in_room = [user_id for user_id in self.redis_client.smembers(f"room_presence:{room}")]
             data['users_in_room'] = users_in_room
-
             log("KAFKA_ORCHESTRATOR", f"Enriched ambient data for room '{room}' with users: {users_in_room}")
-            return data
+            return data, None      
         except Exception as e:
             log("KAFKA_ORCHESTRATOR", f"Failed to enrich ambient message data: {e}")
-            return None
+        return None, str(e)
         
     def _send_enriched_data(self, enriched_data):
-
-
-
-        # DA SISTEMAREEEEEEEEEEEEEEE
         """
         Send enriched data to Kafka topic.
-
         Args:
             enriched_data: The enriched data dictionary to send.
         """
         try:
+            room_key = (enriched_data.get('room_name') or 
+                enriched_data.get('user_room') or 
+                'unknown')      
             value_bytes = json.dumps(enriched_data, ensure_ascii=False).encode('utf-8')
-            key_bytes = str(enriched_data.get('room_id', 'unknown')).encode('utf-8')
-            
+            key_bytes = str(room_key).encode('utf-8')
             self.producer.produce(
-                self.kafka_topic_enriched,
+                self.topic_enriched,
                 key=key_bytes,
                 value=value_bytes,
                 callback=self._delivery_report
@@ -264,43 +292,214 @@ class Orchestrator:
             self.producer.poll(0)
         except Exception as e:
             log("KAFKA_ORCHESTRATOR", f"Failed to send enriched data: {e}")
-        
+
     def _enrich_and_trigger(self, msg):
         """
-        Send enriched message to the appropriate Kafka topic.
-
+        Enrich message and send to the appropriate Kafka topic.
         Args:
-            enriched_data: The enriched data dictionary to send.
+            msg: Kafka message object to process
         """
         topic = msg.topic()
-
-        try:
-            data = json.loads(msg.value().decode('utf-8'))
-        except json.JSONDecodeError as e:
-            log("KAFKA_ORCHESTRATOR", f"Failed to parse message as JSON: {e}")
-            return
-        
         enriched_data = None
         error = None
         if topic == "wearable_data":
             enriched_data, error = self._enrich_data_wearable(msg)
         elif topic == "sensors_data":
             enriched_data, error = self._enrich_data_ambient(msg)
-
+        else:
+            log("KAFKA_ORCHESTRATOR", f"Unknown topic: {topic}")
+            return
         if error:
             log("KAFKA_ORCHESTRATOR", f"Error enriching data: {error}")
             return
-        
         if enriched_data:
-            # Qui andrebbe il Windowing (Logica 2.5) e il Motore di Decisione (Logica 2.6)
-            
-            # Per ora, inviamo semplicemente il dato arricchito
             self._send_enriched_data(enriched_data)
+      
+# -------------------------------------------------- WEARABLE DATA PROCESSING --------------------------------------------------
 
-            topic = self.topic_enriched
-            # Placeholder for sending enriched data to Kafka producer
-            log("KAFKA_ORCHESTRATOR", f"Sending enriched data: {enriched_data}")
-            # Here you would implement the Kafka producer logic to send the enriched data
+    def _is_working_hour(self, datetime):
+        """
+        Check if the given datetime is within working hours.
+        Args:
+            datetime: datetime object to check
+        Returns:
+            bool: True if within working hours, False otherwise
+        """
+        hour = datetime.hour
+        for start, end in self.WORKING_HOURS:
+            if start <= hour < end:
+                return True
+            return False
+
+    def _handle_samples(self, samples, start_unix, offset_sec, garmin_id, user_room, summary_type):
+        valid_data = []
+        for t_offset, value in samples.items():
+            timestamp_unix = start_unix + int(t_offset)
+            dt_local = datetime.fromtimestamp(timestamp_unix, tz=timezone.utc) + timedelta(seconds=offset_sec)
+            if self._is_working_hour(dt_local):
+                valid_data.append({
+                    "garmin_id": garmin_id,
+                    "user_room": user_room,
+                    "summary_type": summary_type,
+                    "timestamp_local": dt_local,
+                    "value": value
+                })
+        return valid_data
+    
+    def _sync_with_ambient_data(self, df_wearable, user_room):
+        """
+        Synchronize wearable data with ambient data from MongoDB.
+        Args:
+            df_wearable: DataFrame containing wearable data
+            user_room: Room associated with the user
+        """
+        try:
+            if df_wearable.empty or not user_room:
+                log("KAFKA_ORCHESTRATOR", "No wearable data or user room provided for synchronization.")
+                return
+            # Determine time range for ambient data query
+            start_ts = df_wearable['timestamp_local'].min()
+            end_ts = df_wearable['timestamp_local'].max()
+            query = {
+                "room_name": user_room,
+                "timestamp": {
+                    "$gte": start_ts,
+                    "$lte": end_ts
+                }
+            }
+            ambient_cursor = self.mongo_db.sensor_data.find(query)
+            df_ambient_raw = pd.DataFrame(list(ambient_cursor))
+
+            if df_ambient_raw.empty:
+                log("KAFKA_ORCHESTRATOR", f"No ambient data found for room '{user_room}' between {start_ts} and {end_ts}.")
+                return
+            else:
+                df_ambient_raw['timestamp'] = pd.to_datetime(df_ambient_raw['timestamp'])
+                # Resample ambient data to 1-minute intervals
+                df_ambient_min = df_ambient_raw.set_index('timestamp').resample('1min').mean(numeric_only=True).reset_index()
+                # Merge wearable and ambient data on timestamp, garmin_id, and room
+                df_final = pd.merge(
+                    df_wearable,
+                    df_ambient_min,
+                    left_on='timestamp_local', 
+                        right_on='timestamp', 
+                        how='left'
+                )
+
+            log("KAFKA_ORCHESTRATOR", f"Final Multimodal Frame ready: {df_final.shape[0]} rows.")
+            self._apply_focus_engine(df_final)
+
+        except Exception as e:
+            log("KAFKA_ORCHESTRATOR", f"Error in ambient synchronization: {e}")
+
+
+
+    def process_wearable_batch(self, msgs):
+        """
+        Process a batch of wearable data messages.
+        Args:
+            msgs: List of Kafka message objects
+        """
+        all_metrics_list = []
+        
+        for msg in msgs:
+            try:
+                raw_data = json.loads(msg.value().decode('utf-8'))
+                summary_type = raw_data.get('summary_type')
+                garmin_id = raw_data.get('garmin_id')
+                user_room = raw_data.get('user_room')
+
+                for entry in raw_data.get('data', []):
+                    t_start_unix = entry.get('startTimeInSeconds')
+                    offset = entry.get('startTimeOffsetInSeconds', 0)
+                    
+                    # Inner helper function to compute local datetime
+                    def get_dt(off):
+                        ts_utc = datetime.fromtimestamp(t_start_unix + int(off), tz=timezone.utc)
+                        return ts_utc + timedelta(seconds=offset)
+                match summary_type:
+                    case 'epochs':
+                        dt = get_dt(0)
+                        if self._is_working_hour(dt):
+                            all_metrics_list.append({
+                                "timestamp_local": dt, "garmin_id": garmin_id, "room": user_room,
+                                "activity_type": entry.get('activityType'),
+                                "intensity": entry.get('intensity'),
+                                "steps": entry.get('steps')
+                            })
+
+                    case 'stressDetails':
+                        stress_samples = entry.get('timeOffsetStressLevelValues', {})
+                        for t_off, val in stress_samples.items():
+                            dt = get_dt(t_off)
+                            if self._is_working_hour(dt) and val >= 0: # -1/-2 are errors/missing data
+                                all_metrics_list.append({
+                                    "timestamp_local": dt, "garmin_id": garmin_id, "room": user_room,
+                                    "stress_score": val
+                                })
+                        # Extract BODY BATTERY (usually same offsets as stress)
+                        bb_samples = entry.get('timeOffsetBodyBatteryValues', {})
+                        for t_off, val in bb_samples.items():
+                            dt = get_dt(t_off)
+                            if self._is_working_hour(dt):
+                                all_metrics_list.append({
+                                    "timestamp_local": dt, "garmin_id": garmin_id, "room": user_room,
+                                    "body_battery": val
+                                })
+
+                    case 'dailies':
+                        hr_samples = entry.get('timeOffsetHeartRateSamples', {})
+                        for t_off, val in hr_samples.items():
+                            dt = get_dt(t_off)
+                            if self._is_working_hour(dt):
+                                all_metrics_list.append({
+                                    "timestamp_local": dt, "garmin_id": garmin_id, "room": user_room,
+                                    "hr": val
+                                })
+                    case 'sleeps':
+                            # Extract RESPIRATION RATE during sleep
+                            resp_samples = entry.get('timeOffsetSleepRespiration', {})
+                            for t_off, val in resp_samples.items():
+                                dt = get_dt(t_off)
+                                # Sleep data is usually at night, so we consider all data as baseline
+                                all_metrics_list.append({
+                                    "timestamp_local": dt, "garmin_id": garmin_id, "room": user_room,
+                                    "sleep_respiration_rate": val,
+                                    "is_baseline_data": True # Flag per distinguerlo dallo studio
+                                })
+                                
+                                # Other sleep summary metrics
+                                extra_sleep_metadata = {
+                                    "total_sleep_duration": entry.get('durationInSeconds'),
+                                    "deep_sleep_duration": entry.get('deepSleepDurationInSeconds'),
+                                    "sleep_score": entry.get('overallSleepScore', {}).get('value')
+                                }
+                    case _:
+                        log("KAFKA_ORCHESTRATOR", f"Unknown summary_type '{summary_type}' in wearable data message.")
+
+            except Exception as e:
+                log("KAFKA_ORCHESTRATOR", f"Error parsing message in batch: {e}")
+
+        if all_metrics_list:
+            df_raw = pd.DataFrame(all_metrics_list)
+            
+            # TEMPORAL NORMALIZATION TO THE MINUTE
+            # Necessary because HR samples every 15s, Stress every 180s.
+            df_raw['timestamp_local'] = pd.to_datetime(df_raw['timestamp_local']).dt.floor('min')
+            
+            # MERGING (PIVOTING)
+            # Group by minute, user, and room. Take the first available value (or the average).
+            df_merged = df_raw.groupby(['timestamp_local', 'garmin_id', 'room']).first().reset_index()
+            
+            log("KAFKA_ORCHESTRATOR", f"Fused batch: {len(df_merged)} minutes of data ready for study analysis.")
+            
+            # Proceeding to synchronization with MongoDB (Environmental Data)
+            self._sync_with_ambient_data(df_merged, user_room)
+    
+    
+
+# ------------------------------------------------------ ORCHESTRATOR RUN LOOP --------------------------------------------------------
+    
     def run(self):
         """Main consumer loop - polls Kafka and processes messages."""
         messages_count = 0
@@ -315,15 +514,18 @@ class Orchestrator:
                     else:
                         log("KAFKA_CONSUMER", f"Error: {msg.error()}")
                         continue
-                
-                if msg.topic() == "presence_updates":
-                    self._handle_presence_update(msg)
-                else:
-                    # we wil manage the intelligent functionality here
-                    log("KAFKA_ORCHESTRATOR", f"Received message on unknown topic '{msg.topic()}'")
+                match msg.topic():
+                    case "user_presence":
+                        self._handle_presence_update(msg)
+                    case "wearable_data" | "sensors_data":
+                        self._enrich_and_trigger(msg)
+                    case "wearable_enriched_data":
+                        self._process_wearable_batch([msg])
+                    case _:
+                        log("KAFKA_ORCHESTRATOR", f"Received message on unknown topic '{msg.topic()}'")
 
                 if not self.kafka_auto_commit:
-                    messages_count += 1    
+                    messages_count += 1
 
                 if messages_count >= self.COMMIT_BATCH_SIZE:
                     self.consumer.commit(asynchronous=False)
@@ -334,7 +536,7 @@ class Orchestrator:
             if not self.kafka_auto_commit and messages_count > 0:
                 self.consumer.commit(asynchronous=False)
                 log("KAFKA_ORCHESTRATOR", f"Final commit of {messages_count} messages on shutdown.")
-            
+    
         except Exception as e:
             log("KAFKA_CONSUMER", f"Exception occurred: {str(e)}")
         finally:
@@ -343,5 +545,6 @@ class Orchestrator:
     def setup(self):
         """Setup orchestrator components."""
         self._redis_setup()
+        self._mongo_setup()
         self._setup_kafka_consumer()
-        # self.setup_kafka_producer() FOR LATER
+        self._setup_kafka_producer()

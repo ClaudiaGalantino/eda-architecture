@@ -81,9 +81,12 @@ def index():
         """
     else:    
         content = f"""
-            <p>Garmin Status: <span class="status-disconnected">Disconnected</span></p>
-            <p>No Garmin token found. Start the OAuth flow to enable both Pull and Push.</p>
-            <p><a href='{url_for("oauth.login")}'>Login with Garmin</a></p>
+            <div style="text-align: center; padding: 40px 20px;">
+                <p style="font-size: 18px; color: #333; margin-bottom: 30px;">Connect your Garmin account to get started</p>
+                <a href='{url_for("oauth.login")}' style="display: inline-block; background-color: #007DB3; color: white; padding: 15px 40px; text-decoration: none; border-radius: 6px; font-size: 16px; font-weight: bold; box-shadow: 0 2px 4px rgba(0,0,0,0.2); transition: background-color 0.3s;">
+                    Login with Garmin
+                </a>
+            </div>
         """
     return render_template_string(html_template.format(content))
 
