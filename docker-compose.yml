@@ -149,6 +149,22 @@ services:
     tty: true
     stdin_open: true
 
+  # Consumer COPY
+  # Kafka Consumer Service
+  kafka_consumer_copy:
+    build: ./services/kafka_consumer_copy
+    container_name: kafka_consumer_copy
+    env_file:
+      - ./services/kafka_consumer_copy/.env
+    restart: unless-stopped
+    depends_on:
+      broker:
+        condition: service_healthy
+      mongo:
+        condition: service_started
+    tty: true
+    stdin_open: true
+
   # User Presence Service
   user_presence:
     build: ./services/user_presence_prod

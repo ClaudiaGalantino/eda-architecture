@@ -30,6 +30,7 @@ class KafkaMongoConsumer:
         self.topic_collection_map_dict = {}
         self.message_counter = 0
         self.message_batch = defaultdict(list)
+        self.allowed_garmin_ids = []
         
         # Load environment variables
         self._load_env_config()
@@ -50,6 +51,7 @@ class KafkaMongoConsumer:
         self.kafka_group_id = os.getenv('KAFKA_GROUP_ID')
         self.kafka_client_id = os.getenv('KAFKA_CLIENT_ID')
         self.kafka_auto_commit = os.getenv('KAFKA_AUTO_COMMIT', 'False').lower() in ('true', '1', 't')
+        self.allowed_garmin_ids_raw = os.getenv('ALLOWED_GARMIN_IDS')
         
         # Validate environment variables
         missing = []
@@ -60,7 +62,8 @@ class KafkaMongoConsumer:
             "KAFKA_CLIENT_ID": self.kafka_client_id,
             "MONGO_URI": self.mongo_uri,
             "MONGO_DB": self.mongo_db_name,
-            "TOPIC_COLLECTION_MAP": self.topic_collection_map
+            "TOPIC_COLLECTION_MAP": self.topic_collection_map,
+            "ALLOWED_GARMIN_IDS": self.allowed_garmin_ids_raw
         }.items():
             if not var_value:
                 missing.append(var_name)
@@ -76,6 +79,13 @@ class KafkaMongoConsumer:
         if not self.kafka_topics:
             log("SYSTEM - KAFKA_CONSUMER", "No Kafka topics found in KAFKA_TOPICS. Provide at least one topic (comma-separated if many).")
             sys.exit(1)
+
+        # Parse allowed Garmin IDs
+        if self.allowed_garmin_ids_raw:
+            self.allowed_garmin_ids = [gid.strip() for gid in self.allowed_garmin_ids_raw.split(',') if gid.strip()]
+            log("SYSTEM - KAFKA_CONSUMER", f"Filtering wearable data for Garmin IDs: {self.allowed_garmin_ids}")
+        else:
+            log("SYSTEM - KAFKA_CONSUMER", "No ALLOWED_GARMIN_IDS configured, all wearable data will be saved.")
     
     def _parse_topic_collection_mapping(self):
         """Parse topic to collection mapping from environment variable."""
@@ -167,6 +177,17 @@ class KafkaMongoConsumer:
         except json.JSONDecodeError as e:
             log("KAFKA_CONSUMER", f"Failed to parse message as JSON: {e}")
             return
+        
+        # Filter wearable data by allowed Garmin IDs
+        if topic == 'wearable_data' and self.allowed_garmin_ids:
+            garmin_id = doc.get('garmin_id')
+            if not garmin_id:
+                log("KAFKA_CONSUMER", f"Skipping wearable message without garmin_id")
+                return
+            if garmin_id not in self.allowed_garmin_ids:
+                log("KAFKA_CONSUMER", f"Skipping wearable message for non-allowed garmin_id: {garmin_id}")
+                return
+            log("KAFKA_CONSUMER", f"Accepted wearable data for garmin_id: {garmin_id}")
         
         # Get collection name from mapping
         collection_name = self.topic_collection_map_dict.get(topic)

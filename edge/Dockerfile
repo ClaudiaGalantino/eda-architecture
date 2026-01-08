@@ -11,10 +11,10 @@ COPY requirement.txt .
 RUN pip install --no-cache-dir -r requirement.txt
 
 # Copy subscriber script
-COPY edge_initiation.py .
+COPY edge_command.py .
 
 # Force Python to flush print output immediately
 ENV PYTHONUNBUFFERED=1
 
 # Run the edge initiation script
-CMD ["python", "-u", "edge_initiation.py"]
+CMD ["python", "-u", "edge_command.py"]

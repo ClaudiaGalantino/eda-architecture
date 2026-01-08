@@ -2,15 +2,7 @@ from datetime import datetime
 from dotenv import load_dotenv
 from zoneinfo import ZoneInfo
 import paho.mqtt.client as mqtt
-import json
-import time
-import os
-import board
-import busio
-import adafruit_dht
-import adafruit_sgp30
-import os
-import sys
+import json, time, os, board, busio, sys, adafruit_dht, adafruit_sgp30
 
 load_dotenv()
 
