@@ -52,6 +52,7 @@ class Orchestrator:
 
         self.mongo_uri = os.getenv('MONGO_URI')
         self.mongo_db_name = os.getenv('MONGO_DB_NAME')
+        self.sensor_data_collection = os.getenv('SENSOR_DATA_COLLECTION')
 
         self.rooms_list_raw = os.getenv('ROOMS_LIST')
         self.users_email_list_raw = os.getenv('USER_EMAILS_LIST')
@@ -78,6 +79,7 @@ class Orchestrator:
             "REDIS_PASSWORD": self.redis_password,
             "MONGO_URI": self.mongo_uri,
             "MONGO_DB_NAME": self.mongo_db_name,
+            "SENSOR_DATA_COLLECTION": self.sensor_data_collection,
             "ROOMS_LIST": self.rooms_list_raw,
             "USER_EMAILS_LIST": self.users_email_list_raw,
             "KAFKA_BROKER": self.kafka_broker,
@@ -146,7 +148,7 @@ class Orchestrator:
         consumer_config = {
             'bootstrap.servers': self.kafka_broker,
             'group.id': self.kafka_group_id,
-            'client.id': self.kafka_client_id,
+            'client.id': self.kafka_consumer_client_id,
             'auto.offset.reset': 'earliest',
             'enable.auto.commit': self.kafka_auto_commit,
             'session.timeout.ms': 30000
@@ -358,8 +360,9 @@ class Orchestrator:
                 log("KAFKA_ORCHESTRATOR", "No wearable data or user room provided for synchronization.")
                 return
             # Determine time range for ambient data query
-            start_ts = df_wearable['timestamp_local'].min()
-            end_ts = df_wearable['timestamp_local'].max()
+            df_wearable['timestamp_local'] = pd.to_datetime(df_wearable['timestamp_local'])
+            start_ts = df_wearable['timestamp_local'].min().strftime("%Y-%m-%d %H:%M:%S")
+            end_ts = df_wearable['timestamp_local'].max().strftime("%Y-%m-%d %H:%M:%S")
             query = {
                 "room_name": user_room,
                 "timestamp": {
@@ -367,7 +370,7 @@ class Orchestrator:
                     "$lte": end_ts
                 }
             }
-            ambient_cursor = self.mongo_db.sensor_data.find(query)
+            ambient_cursor = self.mongo_db[self.sensor_data_collection].find(query)
             df_ambient_raw = pd.DataFrame(list(ambient_cursor))
 
             if df_ambient_raw.empty:
@@ -387,11 +390,23 @@ class Orchestrator:
                 )
 
             log("KAFKA_ORCHESTRATOR", f"Final Multimodal Frame ready: {df_final.shape[0]} rows.")
-            self._apply_focus_engine(df_final)
+            # --- TEST ---
+            log("TEST_ORCHESTRATOR", "Checking Fused DataFrame Structure:")
+            print("\n--- HEAD DEL DATAFRAME FUSO ---")
+            print(df_final.head(10).to_string()) 
+            print("\n--- VALORI MANCANTI PER COLONNA ---")
+            print(df_final.isnull().sum())
+            print("\n--- INFO TIPI DATI ---")
+            print(df_final.dtypes)
+            # save to CSV for manual inspection
+            df_final.to_csv(f"test_fusion_{user_room}_{datetime.now().strftime('%H%M%S')}.csv", index=False)
+            log("TEST_ORCHESTRATOR", f"DataFrame salvato in CSV per ispezione manuale.")
+            
+            # self._apply_focus_engine(df_final) # COMMENTATO PER TEST
+            # ---------------------------------------
 
         except Exception as e:
             log("KAFKA_ORCHESTRATOR", f"Error in ambient synchronization: {e}")
-
 
 
     def process_wearable_batch(self, msgs):
@@ -414,12 +429,13 @@ class Orchestrator:
                     offset = entry.get('startTimeOffsetInSeconds', 0)
                     
                     # Inner helper function to compute local datetime
-                    def get_dt(off):
+                    def _get_date_time(off):
                         ts_utc = datetime.fromtimestamp(t_start_unix + int(off), tz=timezone.utc)
                         return ts_utc + timedelta(seconds=offset)
                 match summary_type:
                     case 'epochs':
-                        dt = get_dt(0)
+                        # every 15 minutes
+                        dt = _get_date_time(0)
                         if self._is_working_hour(dt):
                             all_metrics_list.append({
                                 "timestamp_local": dt, "garmin_id": garmin_id, "room": user_room,
@@ -429,9 +445,10 @@ class Orchestrator:
                             })
 
                     case 'stressDetails':
+                        # every 3 minutes
                         stress_samples = entry.get('timeOffsetStressLevelValues', {})
                         for t_off, val in stress_samples.items():
-                            dt = get_dt(t_off)
+                            dt = _get_date_time(t_off)
                             if self._is_working_hour(dt) and val >= 0: # -1/-2 are errors/missing data
                                 all_metrics_list.append({
                                     "timestamp_local": dt, "garmin_id": garmin_id, "room": user_room,
@@ -440,7 +457,7 @@ class Orchestrator:
                         # Extract BODY BATTERY (usually same offsets as stress)
                         bb_samples = entry.get('timeOffsetBodyBatteryValues', {})
                         for t_off, val in bb_samples.items():
-                            dt = get_dt(t_off)
+                            dt = _get_date_time(t_off)
                             if self._is_working_hour(dt):
                                 all_metrics_list.append({
                                     "timestamp_local": dt, "garmin_id": garmin_id, "room": user_room,
@@ -448,26 +465,53 @@ class Orchestrator:
                                 })
 
                     case 'dailies':
+                        # every 15 minutes
                         hr_samples = entry.get('timeOffsetHeartRateSamples', {})
                         for t_off, val in hr_samples.items():
-                            dt = get_dt(t_off)
+                            dt = _get_date_time(t_off)
                             if self._is_working_hour(dt):
                                 all_metrics_list.append({
                                     "timestamp_local": dt, "garmin_id": garmin_id, "room": user_room,
                                     "hr": val
                                 })
+
+                    case 'hrv':
+                        # every 5 minutes
+                        hrv_samples = entry.get('hrvValues', {})
+                        for t_off, val in hrv_samples.items():
+                            dt = _get_date_time(t_off)
+                            # HRV è fondamentale sia per la baseline che per lo studio
+                            if self._is_working_hour(dt) and val is not None:
+                                all_metrics_list.append({
+                                    "timestamp_local": dt, 
+                                    "garmin_id": garmin_id, 
+                                    "room": user_room,
+                                    "hrv": val
+                                })
+
+                    case 'allDayRespiration':
+                        # every minute
+                        resp_samples = entry.get('timeOffsetEpochToBreaths', {})
+                        for t_off, val in resp_samples.items():
+                            dt = _get_date_time(t_off)
+                            if self._is_working_hour(dt):
+                                all_metrics_list.append({
+                                    "timestamp_local": dt, 
+                                    "garmin_id": garmin_id, 
+                                    "room": user_room,
+                                    "respiration_rate": val
+                                })
+
                     case 'sleeps':
-                            # Extract RESPIRATION RATE during sleep
                             resp_samples = entry.get('timeOffsetSleepRespiration', {})
                             for t_off, val in resp_samples.items():
-                                dt = get_dt(t_off)
+                                dt = _get_date_time(t_off)
                                 # Sleep data is usually at night, so we consider all data as baseline
                                 all_metrics_list.append({
                                     "timestamp_local": dt, "garmin_id": garmin_id, "room": user_room,
                                     "sleep_respiration_rate": val,
-                                    "is_baseline_data": True # Flag per distinguerlo dallo studio
+                                    "is_baseline_data": True
                                 })
-                                
                                 # Other sleep summary metrics
                                 extra_sleep_metadata = {
                                     "total_sleep_duration": entry.get('durationInSeconds'),
@@ -488,16 +532,14 @@ class Orchestrator:
             df_raw['timestamp_local'] = pd.to_datetime(df_raw['timestamp_local']).dt.floor('min')
             
             # MERGING (PIVOTING)
-            # Group by minute, user, and room. Take the first available value (or the average).
+            # Group by minute, user, and room. For each minute, keep the first valid entry per metric.
             df_merged = df_raw.groupby(['timestamp_local', 'garmin_id', 'room']).first().reset_index()
             
             log("KAFKA_ORCHESTRATOR", f"Fused batch: {len(df_merged)} minutes of data ready for study analysis.")
             
-            # Proceeding to synchronization with MongoDB (Environmental Data)
+            # synchronization with MongoDB (Environmental Data)
             self._sync_with_ambient_data(df_merged, user_room)
     
-    
-
 # ------------------------------------------------------ ORCHESTRATOR RUN LOOP --------------------------------------------------------
     
     def run(self):
@@ -520,7 +562,10 @@ class Orchestrator:
                     case "wearable_data" | "sensors_data":
                         self._enrich_and_trigger(msg)
                     case "wearable_enriched_data":
-                        self._process_wearable_batch([msg])
+                        self.wearable_buffer.append(msg)
+                        if len(self.wearable_buffer) >= 20: # Process batch of 20 messages
+                            self.process_wearable_batch(self.wearable_buffer)
+                            self.wearable_buffer = []
                     case _:
                         log("KAFKA_ORCHESTRATOR", f"Received message on unknown topic '{msg.topic()}'")
 
