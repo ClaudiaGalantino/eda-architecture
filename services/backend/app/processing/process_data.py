@@ -4,12 +4,14 @@ from zoneinfo import ZoneInfo
 from app.db_utils import *
 from app.processing.wearable_producer import send_data
 import app.garmin_client as garmin_module
-import asyncio
-import threading
-import logging
+import asyncio, requests, threading, io, base64
 
-logger = logging.getLogger(__name__)
-CET = ZoneInfo('Europe/Rome')
+CET = ZoneInfo("Europe/Rome")
+def log(prefix, message):
+    """
+    Simple logger function.
+    """
+    print(f"[{datetime.now(CET).strftime('%Y-%m-%d %H:%M:%S')}][{prefix}] {message}")
 
 # Global variables for the event loop and executor
 loop = asyncio.new_event_loop()
@@ -41,7 +43,7 @@ def _synch_fetch(token, secret, url):
     """
 
     if garmin_module.garmin_client is None:
-        logger.error("Garmin client not initialized")
+        log("PROCESS_DATA", "Garmin client not initialized")
         return None
     
     try: 
@@ -52,7 +54,7 @@ def _synch_fetch(token, secret, url):
             method = 'GET',
             )
     except Exception as e:
-        logger.error(f"Error fetching data from Garmin API: {e}")
+        log("PROCESS_DATA", f"Error fetching data from Garmin API: {e}")
         return None
 
 
@@ -73,25 +75,50 @@ async def fetch_data_from_garmin(token, secret, url):
 
 
 async def process_ping(summary_type, callback_url, garmin_id):
-    logger.info(f"The summary is {summary_type} and the url is {callback_url}")
+    log('PROCESS_DATA', f"Processing ping for Garmin ID {garmin_id}, summary type {summary_type}")
 
     token, secret = get_token(garmin_id)
     if not token or not secret:
-        logger.error(f"No token found for Garmin ID {garmin_id}")
+        log("PROCESS_DATA", f"No token found for Garmin ID {garmin_id}")
         return
     
     resp = await fetch_data_from_garmin(token, secret, callback_url)
 
     if resp is None:
-        logger.error(f"Failed to fetch data for Garmin ID {garmin_id}")
+        log("PROCESS_DATA", f"Failed to fetch data for Garmin ID {garmin_id}")
         return
     
     if resp.status_code == 200:
-        try:
-            payload = resp.json()
-        except Exception:
-            payload = resp.text
-        logger.info(f"Fetched data for Garmin ID {garmin_id}; scheduling publish to Kafka")
+        if summary_type == 'activityFiles':
+            log("PROCESS_DATA", f"Sending FIT file to fit_processor for {garmin_id}")
+            fit_file_bin = io.BytesIO(resp.content)
+            # Call Java fit_processor container
+            files = {'file': ('activity.fit', fit_file_bin, 'application/octet-stream')}
+            params = {'deviceIdentifier': garmin_id}
+            try:
+                # Eseguiamo la POST verso il container fit_processor
+                # L'URL usa il nome del servizio definito nel docker-compose
+                java_resp = requests.post(
+                    "http://fit_processor:8080/process", 
+                    params=params,
+                    files=files
+                )
+                
+                if java_resp.status_code == 200:
+                    payload = java_resp.text 
+                    log("PROCESS_DATA", "FIT file processed successfully")
+                else:
+                    log("PROCESS_DATA", f"Java processor error: {java_resp.status_code}")
+                    payload = base64.b64encode(resp.content).decode('utf-8')
+                    
+            except Exception as e:
+                log("PROCESS_DATA", f"Failed to connect to fit_processor: {e}")
+                payload = base64.b64encode(resp.content).decode('utf-8')
+            try:
+                payload = resp.json()
+            except Exception:
+                payload = resp.text
+        log("PROCESS_DATA", f"Fetched data for Garmin ID {garmin_id}; scheduling publish to Kafka")
         
         current_time = datetime.now(CET).strftime("%Y-%m-%d %H:%M:%S")
 
@@ -105,8 +132,8 @@ async def process_ping(summary_type, callback_url, garmin_id):
         try:
             await loop.run_in_executor(executor, send_data, kafka_payload)
         except Exception as e:
-            logger.error(f"Error sending data to Kafka: {e}")
+            log("PROCESS_DATA", f"Error sending data to Kafka: {e}")
     else:
-        logger.warning(f"Fetch failed: status={resp.status_code} body={resp.text}")
+        log("PROCESS_DATA", f"Fetch failed: status={resp.status_code} body={resp.text}")
 
     print(f"The summary is {summary_type} and the url is {callback_url}")

@@ -46,18 +46,18 @@ services:
     stdin_open: true
     restart: unless-stopped
 
-  # MQTT Publisher (Raspberry starter)
-  edge_command:
-    build: ./edge
-    container_name: edge_command
-    env_file:
-      - ./.env
-    depends_on:
-      mosquitto:
-        condition: service_started
-    tty: true
-    stdin_open: true
-    restart: unless-stopped
+  # MQTT Publisher (Raspberry starter) --> activate it if is possible to use edge/publisher_extended
+  #edge_command:
+  #  build: ./edge
+  #  container_name: edge_command
+  #  env_file:
+  #    - ./.env
+  #  depends_on:
+  #    mosquitto:
+  #      condition: service_started
+  #  tty: true
+  #  stdin_open: true
+  #  restart: unless-stopped
 
   # Kafka Broker
   broker:
@@ -133,6 +133,16 @@ services:
       ME_CONFIG_BASICAUTH_PASSWORD: ${ME_CONFIG_BASICAUTH_PASSWORD}
     depends_on:
       - mongo
+
+  # Fit Processor Service
+  fit_processor:
+    build: ./services/fit_processor
+    container_name: fit_processor
+    restart: unless-stopped
+    ports:
+      - 8080:8080
+    tty: true
+    stdin_open: true
 
   # Kafka Consumer Service
   kafka_consumer:

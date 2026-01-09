@@ -186,7 +186,6 @@ class KafkaMongoConsumer:
             if garmin_id not in self.allowed_garmin_ids:
                 log("KAFKA_CONSUMER", f"Skipping wearable message for non-allowed garmin_id: {garmin_id}")
                 return
-            log("KAFKA_CONSUMER", f"Accepted wearable data for garmin_id: {garmin_id}")
         
         # Get collection name from mapping
         collection_name = self.topic_collection_map_dict.get(topic)
