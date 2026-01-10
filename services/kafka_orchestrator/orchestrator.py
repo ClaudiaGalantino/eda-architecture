@@ -34,6 +34,7 @@ class Orchestrator:
         self.producer = None
         self.wearable_buffer = []
         self.COMMIT_BATCH_SIZE = 50
+        self.BATCH_SIZE = 5
         self.WORKING_HOURS= [(9,12), (14,18)] # 9AM-12PM and 2PM-6PM 
 
         # Load environment variables
@@ -269,6 +270,8 @@ class Orchestrator:
             data['users_in_room'] = users_in_room
             # Add to mongo collection
             self.mongo_db[self.sensor_en_data_collection].insert_one(data)
+            if '_id' in data:
+                del data['_id']
             log("ORCH_ENRICH", f"Enriched ambient data for room '{room}' with users: {users_in_room}")
             return data, None      
         except Exception as e:
@@ -433,7 +436,7 @@ class Orchestrator:
             # save into mongo db
             self.mongo_db["merged_df_collection"].insert_many(df_final.to_dict('records'))
             # save to CSV for manual inspection
-            df_final.to_csv(f"test_fusion_{user_room}_{datetime.now().strftime('%H%M%S')}.csv", index=False)
+            df_final.to_csv(f"orchestrator_data/test_fusion_{user_room}_{datetime.now().strftime('%H%M%S')}.csv", index=False)
             log("ORCH_SYNC", f"DataFrame salvato in CSV per ispezione manuale.")
     
             # self._apply_focus_engine(df_final) # COMMENTATO PER TEST
@@ -596,7 +599,7 @@ class Orchestrator:
                         self._enrich_and_trigger(msg)
                     case "wearable_enriched_data":
                         self.wearable_buffer.append(msg)
-                        if len(self.wearable_buffer) >= 20: # Process batch of 20 messages
+                        if len(self.wearable_buffer) >= self.BATCH_SIZE: # Process batch of 5 messages
                             self.process_wearable_batch(self.wearable_buffer)
                             self.wearable_buffer = []
                     case _:

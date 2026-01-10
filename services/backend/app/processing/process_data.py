@@ -118,6 +118,12 @@ async def process_ping(summary_type, callback_url, garmin_id):
                 payload = resp.json()
             except Exception:
                 payload = resp.text
+        else:
+            try:
+                payload = resp.json()
+            except Exception as e:
+                log("PROCESS_DATA", f"Error parsing JSON response: {e}")
+                payload = resp.text
         log("PROCESS_DATA", f"Fetched data for Garmin ID {garmin_id}; scheduling publish to Kafka")
         
         current_time = datetime.now(CET).strftime("%Y-%m-%d %H:%M:%S")
