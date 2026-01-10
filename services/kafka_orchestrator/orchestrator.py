@@ -53,7 +53,7 @@ class Orchestrator:
 
         self.mongo_uri = os.getenv('MONGO_URI')
         self.mongo_db_name = os.getenv('MONGO_DB_NAME')
-        self.sensor_data_collection = os.getenv('SENSOR_DATA_COLLECTION')
+        self.sensor_en_data_collection = os.getenv('SENSOR_DATA_COLLECTION')
 
         self.rooms_list_raw = os.getenv('ROOMS_LIST')
         self.users_email_list_raw = os.getenv('USER_EMAILS_LIST')
@@ -80,7 +80,7 @@ class Orchestrator:
             #"REDIS_PASSWORD": self.redis_password,
             "MONGO_URI": self.mongo_uri,
             "MONGO_DB_NAME": self.mongo_db_name,
-            "SENSOR_DATA_COLLECTION": self.sensor_data_collection,
+            "SENSOR_DATA_COLLECTION": self.sensor_en_data_collection,
             "ROOMS_LIST": self.rooms_list_raw,
             "USER_EMAILS_LIST": self.users_email_list_raw,
             "KAFKA_BROKER": self.kafka_broker,
@@ -267,6 +267,8 @@ class Orchestrator:
                 return None, "Missing room_name in message"        
             users_in_room = [user_id for user_id in self.redis_client.smembers(f"room_presence:{room}")]
             data['users_in_room'] = users_in_room
+            # Add to mongo collection
+            self.mongo_db[self.sensor_en_data_collection].insert_one(data)
             log("ORCH_ENRICH", f"Enriched ambient data for room '{room}' with users: {users_in_room}")
             return data, None      
         except Exception as e:
@@ -400,7 +402,7 @@ class Orchestrator:
                     "$lte": end_ts
                 }
             }
-            ambient_cursor = self.mongo_db[self.sensor_data_collection].find(query)
+            ambient_cursor = self.mongo_db[self.sensor_en_data_collection].find(query)
             df_ambient_raw = pd.DataFrame(list(ambient_cursor))
 
             if df_ambient_raw.empty:
@@ -428,6 +430,8 @@ class Orchestrator:
             print(df_final.isnull().sum())
             print("\n--- INFO TIPI DATI ---")
             print(df_final.dtypes)
+            # save into mongo db
+            self.mongo_db["merged_df_collection"].insert_many(df_final.to_dict('records'))
             # save to CSV for manual inspection
             df_final.to_csv(f"test_fusion_{user_room}_{datetime.now().strftime('%H%M%S')}.csv", index=False)
             log("ORCH_SYNC", f"DataFrame salvato in CSV per ispezione manuale.")
@@ -629,7 +633,12 @@ class Orchestrator:
             # Already closed, prevent double-closing
             return
         self.running = False
-        
+
+        if self.wearable_buffer:
+            log("ORCH_SHUTDOWN", f"Processing remaining {len(self.wearable_buffer)} wearable messages before exit.")
+            self.process_wearable_batch(self.wearable_buffer)
+            self.wearable_buffer = []
+
         if self.consumer:
             try:
                 self.consumer.close()
