@@ -189,23 +189,22 @@ services:
     stdin_open: true
 
   # Orchestrator Service
-  # # Orchestrator Service
-  # orchestrator:
-  #   build: ./services/kafka_orchestrator
-  #   container_name: orchestrator
-  #   env_file:
-  #     - ./services/kafka_orchestrator/.env
-  #   restart: unless-stopped
-  #   depends_on:
-  #     broker:
-  #       condition: service_healthy
-  #     cache:
-  #       condition: service_started
-  #   tty: true
-  #   stdin_open: true
-  #   volumes:
-  #     - ./data/backend:/app/backend_data:ro
-  #     - ./data/orchestrator:/app/orchestrator_data
+  orchestrator:
+    build: ./services/kafka_orchestrator
+    container_name: orchestrator
+    env_file:
+      - ./services/kafka_orchestrator/.env
+    restart: unless-stopped
+    depends_on:
+      broker:
+        condition: service_healthy
+      cache:
+        condition: service_started
+    tty: true
+    stdin_open: true
+    volumes:
+      - ./data/backend:/app/data
+      - ./data/orchestrator:/app/orchestrator_data
 
   # Cache Service (Redis)
   cache:

@@ -87,7 +87,7 @@ def send_presence_update(user_email, room_id, status):
     message = {
         "timestamp": current_time,
         "user_email": user_email,
-        "room_id": room_id,
+        "room": room_id,
         "status": status
     }
 
@@ -100,7 +100,6 @@ def send_presence_update(user_email, room_id, status):
             value=value_bytes,
             callback=delivery_report
         )
-        producer.poll(0)
     except Exception as e:
         log("USER_PRESENCE", f"Failed to send message: {e}")
 
@@ -110,37 +109,43 @@ def cli_interface():
     """
     log("USER_PRESENCE", "CLI started. Type 'exit' to quit.")
     while running:
-            try:
-                producer.poll(0) 
-                user_emails_input = input("User Email(s) [; separator]: ")
+        try:
+            user_emails_input = input("User Email(s) [; separator] or type 'exit' to close the CLI: ")
 
-                if user_emails_input.lower() == 'exit':
-                    break
-
-                emails_to_process = [email.strip() for email in user_emails_input.split(';')]
-
-                room_id = input("Room name: ")
-                if room_id.lower() == 'exit': break
-                if room_id not in rooms_list:
-                    log("CLI-ERR", f"Room '{room_id}' not valid.")
-                    continue
-
-                status_input = input("Action [E]nter / [X]it: ").lower()
-                if status_input not in ['e', 'x']:
-                    log("CLI-ERR", "Invalid status. Use 'E' for Enter or 'X' for Exit.")
-                    continue
-                
-                status = 'ENTER' if status_input == 'e' else 'EXIT'
-
-                for email in emails_to_process:
-                    send_presence_update(email, room_id, status)
-
-            except KeyboardInterrupt:
-                handle_shutdown(signal.SIGINT, None)
+            if user_emails_input.lower() == 'exit':
                 break
-            except Exception as e:
-                log("CLI-ERR", f"Error during input: {e}")
-                time.sleep(1)
+
+            emails_to_process = [email.strip() for email in user_emails_input.split(';')]
+            
+            # Controllo email valide
+            invalid_emails = [email for email in emails_to_process if email not in users_email_list]
+            if invalid_emails:
+                log("CLI-ERR", f"Not valid Email(s): {', '.join(invalid_emails)}. Try again.")
+                continue 
+
+            room_id = input("Room name: ")
+            if room_id.lower() == 'exit': break
+            if room_id not in rooms_list:
+                log("CLI-ERR", f"Invalid room '{room_id}'. Try again.")
+                continue 
+
+            status_input = input("Action [E]nter / [X]it: ").lower()
+            if status_input not in ['e', 'x']:
+                log("CLI-ERR", "Invalid status. Use 'E' for Enter or 'X' for Exit. Try again.")
+                continue 
+            
+            status = 'ENTER' if status_input == 'e' else 'EXIT'
+
+            for email in emails_to_process:
+                send_presence_update(email, room_id, status)
+            producer.poll(0) 
+            
+        except KeyboardInterrupt:
+            handle_shutdown(signal.SIGINT, None)
+            break
+        except Exception as e:
+            log("CLI-ERR", f"Error during input: {e}")
+            time.sleep(1)
 
     producer.flush()
     log("SYSTEM", "User Presence CLI stopped.")
