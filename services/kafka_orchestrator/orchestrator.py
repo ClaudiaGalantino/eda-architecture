@@ -33,8 +33,7 @@ class Orchestrator:
         self.mongo_db = None
         self.producer = None
         self.wearable_buffer = []
-        self.COMMIT_BATCH_SIZE = 10
-        self.BATCH_SIZE = 1
+        self.BATCH_SIZE = 5
         self.WORKING_HOURS= [(9,12), (14,18)] # 9AM-12PM and 2PM-6PM 
         # Absolute output directory mapped by Docker: ./data/orchestrator -> /app/orchestrator_data
         self.output_dir = os.getenv('ORCH_DATA_DIR', '/app/orchestrator_data')
@@ -52,27 +51,20 @@ class Orchestrator:
         """Load and validate environment variables."""
         self.redis_host = os.getenv('REDIS_HOST')
         self.redis_port = int(os.getenv('REDIS_PORT', 6379))
-        #self.redis_password = os.getenv('REDIS_PASSWORD')
-
         self.mongo_uri = os.getenv('MONGO_URI')
         self.mongo_db_name = os.getenv('MONGO_DB_NAME')
         self.sensor_en_data_collection = os.getenv('SENSOR_EN_DATA_COLLECTION')
-
         self.rooms_list_raw = os.getenv('ROOMS_LIST')
         self.users_email_list_raw = os.getenv('USER_EMAILS_LIST')
-
         self.kafka_broker = os.getenv('KAFKA_BROKER')
         self.kafka_topics_raw = os.getenv('KAFKA_TOPICS')
         self.kafka_group_id = os.getenv('KAFKA_GROUP_ID')
         self.kafka_consumer_client_id = os.getenv('KAFKA_CONSUMER_CLIENT_ID')
         self.kafka_auto_commit = os.getenv('KAFKA_AUTO_COMMIT', 'False').lower() in ('true', '1', 't')
-
         self.kafka_trigger_client_id = os.getenv('KAFKA_TR_CLIENT_ID')
         self.kafka_trigger_topic = os.getenv('KAFKA_TRIGGER_TOPIC')
-
         self.kafka_prod_client_id = os.getenv('KAFKA_EN_CLIENT_ID')
         self.topic_enriched_raw = os.getenv('KAFKA_ENRICHED_TOPICS')
-
         self.kafka_acks = os.getenv('KAFKA_ACKS', 'all')
         self.kafka_retries = int(os.getenv('KAFKA_RETRIES', 5))
 
@@ -80,7 +72,6 @@ class Orchestrator:
         missing = []
         for var_name, var_value in {
             "REDIS_HOST": self.redis_host,
-            #"REDIS_PASSWORD": self.redis_password,
             "MONGO_URI": self.mongo_uri,
             "MONGO_DB_NAME": self.mongo_db_name,
             "SENSOR_EN_DATA_COLLECTION": self.sensor_en_data_collection,
@@ -130,7 +121,6 @@ class Orchestrator:
             self.redis_client = Redis(
                 host=self.redis_host,
                 port=self.redis_port,
-                #password=self.redis_password,
                 decode_responses=True
             )
         except Exception as e:
@@ -393,10 +383,9 @@ class Orchestrator:
                 log("ORCH_SYNC", "Missing user_room; saving wearable-only CSV.")
                 df_final = df_wearable.copy()
                 os.makedirs(self.output_dir, exist_ok=True)
-                csv_path = os.path.join(self.output_dir, f"test_fusion_unknown_{datetime.now().strftime('%H%M%S')}.csv")
+                csv_path = os.path.join(self.output_dir, f"df_unknown_room_{datetime.now().strftime('%H%M%S')}.csv")
                 df_final.to_csv(csv_path, index=False)
                 log("ORCH_SYNC", f"CSV scritto senza ambient (room unknown): {csv_path}")
-                # Try to persist anyway
                 try:
                     self.mongo_db["merged_df_collection"].insert_many(df_final.to_dict('records'))
                 except Exception as e:
@@ -425,9 +414,6 @@ class Orchestrator:
                 # Drop useless columns 
                 df_ambient_raw = df_ambient_raw.drop(columns=['_id', 'room_name', 'mqtt_topic', 'users_in_room'], errors='ignore')
 
-                # Resample ambient data to 1-minute intervals - FORSE DA TOGLIERE
-                # df_ambient_min = df_ambient_raw.set_index('timestamp').resample('1min').mean(numeric_only=True).reset_index()
-                
                 # ASYNC MERGE STRATEGY
                 # Merge wearable and ambient data on timestamp, garmin_id, and room
                 df_final = pd.merge_asof(
@@ -460,7 +446,7 @@ class Orchestrator:
             # save to CSV for manual inspection (absolute path inside container)
             garmin_id = df_wearable['garmin_id'].iloc[0][:8]
             os.makedirs(self.output_dir, exist_ok=True)
-            csv_path = os.path.join(self.output_dir, f"test_fusion_{user_room}_{garmin_id}_{datetime.now().strftime('%H%M%S')}.csv")
+            csv_path = os.path.join(self.output_dir, f"df_fusion_{user_room}_{garmin_id}_{datetime.now().strftime('%H%M%S')}.csv")
             df_final.to_csv(csv_path, index=False)
             log("ORCH_SYNC", f"CSV written on: {csv_path}")
     
@@ -493,6 +479,7 @@ class Orchestrator:
                     def _get_date_time(off):
                         ts_utc = datetime.fromtimestamp(t_start_unix + int(off), tz=timezone.utc)
                         return ts_utc.astimezone(CET)
+                    
                 match summary_type:
                     case 'epochs':
                         # every 15 minutes
@@ -580,14 +567,14 @@ class Orchestrator:
                                 })
 
                     case 'sleeps':
+                            sleep_metrics_list = []
                             resp_samples = entry.get('timeOffsetSleepRespiration', {})
                             for t_off, val in resp_samples.items():
                                 dt = _get_date_time(t_off)
                                 # Sleep data is usually at night, so we consider all data as baseline
-                                all_metrics_list.append({
+                                sleep_metrics_list.append({
                                     "timestamp_local": dt, "garmin_id": garmin_id, "room": user_room,
                                     "sleep_respiration_rate": val,
-                                    "is_baseline_data": True
                                 })
                                 # Other sleep summary metrics
                                 extra_sleep_metadata = {
@@ -595,6 +582,21 @@ class Orchestrator:
                                     "deep_sleep_duration": entry.get('deepSleepDurationInSeconds'),
                                     "sleep_score": entry.get('overallSleepScore', {}).get('value')
                                 }
+
+                            if sleep_metrics_list:
+                                df_sleep = pd.DataFrame(sleep_metrics_list)
+                                # include into df also extra sleep metadata
+                                for key, value in extra_sleep_metadata.items():
+                                    df_sleep[key] = value
+                                try:
+                                    self.mongo_db["sleep_metrics_collection"].insert_many(df_sleep.to_dict('records'))
+                                    log("ORCH_SLEEP", f"Saved {len(df_sleep)} sleep rows to MongoDB 'sleep_metrics_collection'.")
+                                    os.makedirs(self.output_dir, exist_ok=True)
+                                    csv_path = os.path.join(self.output_dir, f"df_sleep_{garmin_id}_{datetime.now().strftime('%H%M%S')}.csv")
+                                    df_sleep.to_csv(csv_path, index=False)
+                                    log("ORCH_SLEEP", f"Sleep CSV written on: {csv_path}")
+                                except Exception as e:
+                                    log("ORCH_SLEEP", f"Mongo insert failed for sleep data: {e}")
                     case _:
                         log("ORCH_PROC", f"Unknown summary_type '{summary_type}' in wearable data message.")
 
@@ -651,7 +653,7 @@ class Orchestrator:
                 if not self.kafka_auto_commit:
                     messages_count += 1
 
-                if messages_count >= self.COMMIT_BATCH_SIZE:
+                if messages_count >= self.BATCH_SIZE:
                     self.consumer.commit(asynchronous=False)
                     log("ORCH_CONSUMER", f"Committed batch of {messages_count} messages.")
                     messages_count = 0
