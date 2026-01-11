@@ -33,9 +33,11 @@ class Orchestrator:
         self.mongo_db = None
         self.producer = None
         self.wearable_buffer = []
-        self.COMMIT_BATCH_SIZE = 50
-        self.BATCH_SIZE = 5
+        self.COMMIT_BATCH_SIZE = 10
+        self.BATCH_SIZE = 1
         self.WORKING_HOURS= [(9,12), (14,18)] # 9AM-12PM and 2PM-6PM 
+        # Absolute output directory mapped by Docker: ./data/orchestrator -> /app/orchestrator_data
+        self.output_dir = os.getenv('ORCH_DATA_DIR', '/app/orchestrator_data')
 
         # Load environment variables
         self._load_env_config()
@@ -54,7 +56,7 @@ class Orchestrator:
 
         self.mongo_uri = os.getenv('MONGO_URI')
         self.mongo_db_name = os.getenv('MONGO_DB_NAME')
-        self.sensor_en_data_collection = os.getenv('SENSOR_DATA_COLLECTION')
+        self.sensor_en_data_collection = os.getenv('SENSOR_EN_DATA_COLLECTION')
 
         self.rooms_list_raw = os.getenv('ROOMS_LIST')
         self.users_email_list_raw = os.getenv('USER_EMAILS_LIST')
@@ -81,7 +83,7 @@ class Orchestrator:
             #"REDIS_PASSWORD": self.redis_password,
             "MONGO_URI": self.mongo_uri,
             "MONGO_DB_NAME": self.mongo_db_name,
-            "SENSOR_DATA_COLLECTION": self.sensor_en_data_collection,
+            "SENSOR_EN_DATA_COLLECTION": self.sensor_en_data_collection,
             "ROOMS_LIST": self.rooms_list_raw,
             "USER_EMAILS_LIST": self.users_email_list_raw,
             "KAFKA_BROKER": self.kafka_broker,
@@ -157,8 +159,9 @@ class Orchestrator:
         }
         try:
             self.consumer = Consumer(consumer_config)
-            self.consumer.subscribe(self.kafka_topics)
-            log("ORCH_CONSUMER", f"Subscribed to topics {self.kafka_topics} on broker '{self.kafka_broker}'")
+            topics_to_subscribe = list(set(self.kafka_topics + (self.topic_enriched or [])))
+            self.consumer.subscribe(topics_to_subscribe)
+            log("ORCH_CONSUMER", f"Subscribed to topics {topics_to_subscribe} on broker '{self.kafka_broker}'")
         except Exception as e:
             log("ORCH_CONSUMER", f"Failed to setup Kafka consumer: {e}")
             sys.exit(1)
@@ -183,10 +186,10 @@ class Orchestrator:
         Callback for message delivery reports.
         """
         if err is not None:
-            log("USER_PRESENCE", f"Message delivery failed: {err}")
+            log("ORCH", f"Message delivery failed: {err}")
         else:
-            log("USER_PRESENCE", f"Message successfully delivered!")
-            log("USER_PRESENCE", f"Topic: {msg.topic()}, Partition: {msg.partition()}, Offset: {msg.offset()}")
+            log("ORCH", f"Message successfully delivered!")
+            log("ORCH", f"Topic: {msg.topic()}, Partition: {msg.partition()}, Offset: {msg.offset()}")
 
 # ------------------------------------------------------ PRESENCE UPDATES --------------------------------------------------------
 
@@ -245,9 +248,13 @@ class Orchestrator:
             garmin_id = data.get('garmin_id')
             if not garmin_id:
                 return None, "Missing garmin_id in message"
-            room = self.redis_client.get(f"garmin_room:{garmin_id}")  
-            data['user_room'] = room
-            log("ORCH_ENRICH", f"Enriched wearable data for garmin_id '{garmin_id}' with room: {room}")
+            room = self.redis_client.get(f"garmin_room:{garmin_id}")
+            if room is not None:
+                data['user_room'] = room
+                log("ORCH_ENRICH", f"Enriched wearable data for garmin_id '{garmin_id}' with room: {room}")
+            else:
+                log("ORCH_ENRICH", f"No room found for garmin_id '{garmin_id}' in Redis.")
+                log("ORCH_ENRICH", f"Wearable data for garmin_id '{garmin_id}' remains unenriched. It is saved in raw collection only.")
             return data, None
         except Exception as e:
             log("ORCH_ENRICH", f"Failed to enrich wearable message: {e}")
@@ -300,7 +307,6 @@ class Orchestrator:
                     return t
             # fallback to second if available, else first
             return candidates[1] if len(candidates) > 1 else candidates[0]
-
         # unknown source topic: fallback to first
         return candidates[0]
 
@@ -348,7 +354,8 @@ class Orchestrator:
         if enriched_data:
             try:
                 target_topic = self._get_enriched_topic_for(topic)
-                self._send_enriched_data(enriched_data, target_topic)
+                if target_topic == 'wearable_enriched_data':
+                    self._send_enriched_data(enriched_data, target_topic)
             except Exception as e:
                 log("ORCH_ENRICH", f"Failed selecting enriched topic: {e}")
       
@@ -364,24 +371,9 @@ class Orchestrator:
         """
         hour = datetime.hour
         for start, end in self.WORKING_HOURS:
-            if start <= hour < end:
+            if start <= hour <= end:
                 return True
         return False
-
-    def _handle_samples(self, samples, start_unix, offset_sec, garmin_id, user_room, summary_type):
-        valid_data = []
-        for t_offset, value in samples.items():
-            timestamp_unix = start_unix + int(t_offset)
-            dt_local = datetime.fromtimestamp(timestamp_unix, tz=timezone.utc) + timedelta(seconds=offset_sec)
-            if self._is_working_hour(dt_local):
-                valid_data.append({
-                    "garmin_id": garmin_id,
-                    "user_room": user_room,
-                    "summary_type": summary_type,
-                    "timestamp_local": dt_local,
-                    "value": value
-                })
-        return valid_data
     
     def _sync_with_ambient_data(self, df_wearable, user_room):
         """
@@ -391,11 +383,25 @@ class Orchestrator:
             user_room: Room associated with the user
         """
         try:
-            if df_wearable.empty or not user_room:
-                log("ORCH_SYNC", "No wearable data or user room provided for synchronization.")
+            if df_wearable.empty:
+                log("ORCH_SYNC", "No wearable data provided for synchronization.")
+                return
+            df_wearable['timestamp_local'] = pd.to_datetime(df_wearable['timestamp_local']).dt.tz_localize(None)
+            # Handle missing user_room by saving wearable-only CSV and skipping ambient query
+            if not user_room:
+                log("ORCH_SYNC", "Missing user_room; saving wearable-only CSV.")
+                df_final = df_wearable.copy()
+                os.makedirs(self.output_dir, exist_ok=True)
+                csv_path = os.path.join(self.output_dir, f"test_fusion_unknown_{datetime.now().strftime('%H%M%S')}.csv")
+                df_final.to_csv(csv_path, index=False)
+                log("ORCH_SYNC", f"CSV scritto senza ambient (room unknown): {csv_path}")
+                # Try to persist anyway
+                try:
+                    self.mongo_db["merged_df_collection"].insert_many(df_final.to_dict('records'))
+                except Exception as e:
+                    log("ORCH_SYNC", f"Mongo insert failed (room unknown): {e}")
                 return
             # Determine time range for ambient data query
-            df_wearable['timestamp_local'] = pd.to_datetime(df_wearable['timestamp_local'])
             start_ts = df_wearable['timestamp_local'].min().strftime("%Y-%m-%d %H:%M:%S")
             end_ts = df_wearable['timestamp_local'].max().strftime("%Y-%m-%d %H:%M:%S")
             query = {
@@ -409,10 +415,11 @@ class Orchestrator:
             df_ambient_raw = pd.DataFrame(list(ambient_cursor))
 
             if df_ambient_raw.empty:
-                log("ORCH_SYNC", f"No ambient data found for room '{user_room}' between {start_ts} and {end_ts}.")
-                return
+                log("ORCH_SYNC", f"No ambient data found for room '{user_room}' between {start_ts} and {end_ts}. Saving wearable-only CSV.")
+                df_final = df_wearable.copy()
             else:
-                df_ambient_raw['timestamp'] = pd.to_datetime(df_ambient_raw['timestamp'])
+                # Convert ambient timestamp to timezone-aware UTC to match wearable data
+                df_ambient_raw['timestamp'] = pd.to_datetime(df_ambient_raw['timestamp']).dt.tz_localize(None)
                 # Resample ambient data to 1-minute intervals
                 df_ambient_min = df_ambient_raw.set_index('timestamp').resample('1min').mean(numeric_only=True).reset_index()
                 # Merge wearable and ambient data on timestamp, garmin_id, and room
@@ -434,10 +441,17 @@ class Orchestrator:
             print("\n--- INFO TIPI DATI ---")
             print(df_final.dtypes)
             # save into mongo db
-            self.mongo_db["merged_df_collection"].insert_many(df_final.to_dict('records'))
-            # save to CSV for manual inspection
-            df_final.to_csv(f"orchestrator_data/test_fusion_{user_room}_{datetime.now().strftime('%H%M%S')}.csv", index=False)
-            log("ORCH_SYNC", f"DataFrame salvato in CSV per ispezione manuale.")
+            try:
+                df_final.drop(columns=['timestamp'], errors='ignore', inplace=True)
+                self.mongo_db["merged_df_collection"].insert_many(df_final.to_dict('records'))
+            except Exception as e:
+                log("ORCH_SYNC", f"Mongo insert failed (continuing to CSV): {e}")
+            # save to CSV for manual inspection (absolute path inside container)
+            garmin_id = df_wearable['garmin_id'].iloc[0][:8]
+            os.makedirs(self.output_dir, exist_ok=True)
+            csv_path = os.path.join(self.output_dir, f"test_fusion_{user_room}_{garmin_id}_{datetime.now().strftime('%H%M%S')}.csv")
+            df_final.to_csv(csv_path, index=False)
+            log("ORCH_SYNC", f"CSV scritto: {csv_path}")
     
             # self._apply_focus_engine(df_final) # COMMENTATO PER TEST
             # ---------------------------------------
@@ -467,12 +481,15 @@ class Orchestrator:
                     # Inner helper function to compute local datetime
                     def _get_date_time(off):
                         ts_utc = datetime.fromtimestamp(t_start_unix + int(off), tz=timezone.utc)
-                        return ts_utc + timedelta(seconds=offset)
+                        return ts_utc.astimezone(CET)
                 match summary_type:
                     case 'epochs':
                         # every 15 minutes
                         dt = _get_date_time(0)
-                        if self._is_working_hour(dt):
+                        is_working = self._is_working_hour(dt)
+                        log("DEBUG_TIME", f"Checking time: {dt.strftime('%H:%M:%S')} - Is Working? {is_working}")
+
+                        if is_working:
                             all_metrics_list.append({
                                 "timestamp_local": dt, "garmin_id": garmin_id, "room": user_room,
                                 "activity_type": entry.get('activityType'),
@@ -485,7 +502,10 @@ class Orchestrator:
                         stress_samples = entry.get('timeOffsetStressLevelValues', {})
                         for t_off, val in stress_samples.items():
                             dt = _get_date_time(t_off)
-                            if self._is_working_hour(dt) and val >= 0: # -1/-2 are errors/missing data
+                            is_working = self._is_working_hour(dt)
+                            log("DEBUG_TIME", f"Checking time: {dt.strftime('%H:%M:%S')} - Is Working? {is_working}")
+
+                            if is_working and val >= 0: # -1/-2 are errors/missing data
                                 all_metrics_list.append({
                                     "timestamp_local": dt, "garmin_id": garmin_id, "room": user_room,
                                     "stress_score": val
@@ -494,7 +514,10 @@ class Orchestrator:
                         bb_samples = entry.get('timeOffsetBodyBatteryValues', {})
                         for t_off, val in bb_samples.items():
                             dt = _get_date_time(t_off)
-                            if self._is_working_hour(dt):
+                            is_working = self._is_working_hour(dt)
+                            log("DEBUG_TIME", f"Checking time: {dt.strftime('%H:%M:%S')} - Is Working? {is_working}")
+
+                            if is_working:
                                 all_metrics_list.append({
                                     "timestamp_local": dt, "garmin_id": garmin_id, "room": user_room,
                                     "body_battery": val
@@ -505,7 +528,10 @@ class Orchestrator:
                         hr_samples = entry.get('timeOffsetHeartRateSamples', {})
                         for t_off, val in hr_samples.items():
                             dt = _get_date_time(t_off)
-                            if self._is_working_hour(dt):
+                            is_working = self._is_working_hour(dt)
+                            log("DEBUG_TIME", f"Checking time: {dt.strftime('%H:%M:%S')} - Is Working? {is_working}")
+
+                            if is_working:
                                 all_metrics_list.append({
                                     "timestamp_local": dt, "garmin_id": garmin_id, "room": user_room,
                                     "hr": val
@@ -516,8 +542,10 @@ class Orchestrator:
                         hrv_samples = entry.get('hrvValues', {})
                         for t_off, val in hrv_samples.items():
                             dt = _get_date_time(t_off)
+                            is_working = self._is_working_hour(dt)
+                            log("DEBUG_TIME", f"Checking time: {dt.strftime('%H:%M:%S')} - Is Working? {is_working}")
                             # HRV è fondamentale sia per la baseline che per lo studio
-                            if self._is_working_hour(dt) and val is not None:
+                            if is_working and val is not None:
                                 all_metrics_list.append({
                                     "timestamp_local": dt, 
                                     "garmin_id": garmin_id, 
@@ -530,7 +558,9 @@ class Orchestrator:
                         resp_samples = entry.get('timeOffsetEpochToBreaths', {})
                         for t_off, val in resp_samples.items():
                             dt = _get_date_time(t_off)
-                            if self._is_working_hour(dt):
+                            is_working = self._is_working_hour(dt)
+                            log("DEBUG_TIME", f"Checking time: {dt.strftime('%H:%M:%S')} - Is Working? {is_working}")
+                            if is_working:
                                 all_metrics_list.append({
                                     "timestamp_local": dt, 
                                     "garmin_id": garmin_id, 
@@ -569,12 +599,14 @@ class Orchestrator:
             
             # MERGING (PIVOTING)
             # Group by minute, user, and room. For each minute, keep the first valid entry per metric.
-            df_merged = df_raw.groupby(['timestamp_local', 'garmin_id', 'room']).first().reset_index()
-            
-            log("ORCH_PROC", f"Fused batch: {len(df_merged)} minutes of data ready for study analysis.")
-            
-            # synchronization with MongoDB (Environmental Data)
-            self._sync_with_ambient_data(df_merged, user_room)
+            df_merged = df_raw.groupby(['garmin_id', 'room'])
+
+            for (g_id, r_name), df_user_context in df_merged:
+                log("ORCH_PROC", f"Processing context for User {g_id} in Room {r_name} ({len(df_user_context)} rows)")
+                # Metrcs pivotingof the single user-room context   
+                df_user_merged = df_user_context.groupby('timestamp_local').first().reset_index()
+                # Synchronization with ambient data
+                self._sync_with_ambient_data(df_user_merged, r_name)
     
 # ------------------------------------------------------ ORCHESTRATOR RUN LOOP --------------------------------------------------------
     
@@ -594,11 +626,11 @@ class Orchestrator:
                         continue
                 match msg.topic():
                     case "user_presence":
-                        self._handle_presence_update(msg)
+                        self._handle_presence_update(msg) # OK
                     case "wearable_data" | "sensors_data":
-                        self._enrich_and_trigger(msg)
+                        self._enrich_and_trigger(msg) # OK
                     case "wearable_enriched_data":
-                        self.wearable_buffer.append(msg)
+                        self.wearable_buffer.append(msg) # OK
                         if len(self.wearable_buffer) >= self.BATCH_SIZE: # Process batch of 5 messages
                             self.process_wearable_batch(self.wearable_buffer)
                             self.wearable_buffer = []
