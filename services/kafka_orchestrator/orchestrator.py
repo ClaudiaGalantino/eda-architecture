@@ -387,6 +387,7 @@ class Orchestrator:
                 log("ORCH_SYNC", "No wearable data provided for synchronization.")
                 return
             df_wearable['timestamp_local'] = pd.to_datetime(df_wearable['timestamp_local']).dt.tz_localize(None)
+            df_wearable.sort_values('timestamp_local')
             # Handle missing user_room by saving wearable-only CSV and skipping ambient query
             if not user_room:
                 log("ORCH_SYNC", "Missing user_room; saving wearable-only CSV.")
@@ -416,20 +417,30 @@ class Orchestrator:
 
             if df_ambient_raw.empty:
                 log("ORCH_SYNC", f"No ambient data found for room '{user_room}' between {start_ts} and {end_ts}. Saving wearable-only CSV.")
-                df_final = df_wearable.copy()
+                df_final = df_wearable
             else:
                 # Convert ambient timestamp to timezone-aware UTC to match wearable data
                 df_ambient_raw['timestamp'] = pd.to_datetime(df_ambient_raw['timestamp']).dt.tz_localize(None)
-                # Resample ambient data to 1-minute intervals
-                df_ambient_min = df_ambient_raw.set_index('timestamp').resample('1min').mean(numeric_only=True).reset_index()
+                df_ambient_raw = df_ambient_raw.sort_values('timestamp')
+                # Drop useless columns 
+                df_ambient_raw = df_ambient_raw.drop(columns=['_id', 'room_name', 'mqtt_topic', 'users_in_room'], errors='ignore')
+
+                # Resample ambient data to 1-minute intervals - FORSE DA TOGLIERE
+                # df_ambient_min = df_ambient_raw.set_index('timestamp').resample('1min').mean(numeric_only=True).reset_index()
+                
+                # ASYNC MERGE STRATEGY
                 # Merge wearable and ambient data on timestamp, garmin_id, and room
-                df_final = pd.merge(
+                df_final = pd.merge_asof(
                     df_wearable,
-                    df_ambient_min,
+                    df_ambient_raw,
                     left_on='timestamp_local', 
-                        right_on='timestamp', 
-                        how='left'
-                )
+                    right_on='timestamp', 
+                    direction='backward' # Prendi l'ultimo valore prima del timestamp Garmin
+                ). drop(columns=['timestamp'], errors='ignore')
+
+                # Forward Fill for missing ambient data
+                # If the first Garmin data is before the first sensor data, carry forward the values
+                df_final = df_final.ffill().bfill()
 
             log("ORCH_SYNC", f"Final Multimodal Frame ready: {df_final.shape[0]} rows.")
             # --- TEST ---
@@ -442,8 +453,8 @@ class Orchestrator:
             print(df_final.dtypes)
             # save into mongo db
             try:
-                df_final.drop(columns=['timestamp'], errors='ignore', inplace=True)
                 self.mongo_db["merged_df_collection"].insert_many(df_final.to_dict('records'))
+                log("ORCH_SYNC", f"Saved {len(df_final)} rows to MongoDB 'merged_df_collection'.")
             except Exception as e:
                 log("ORCH_SYNC", f"Mongo insert failed (continuing to CSV): {e}")
             # save to CSV for manual inspection (absolute path inside container)
@@ -451,7 +462,7 @@ class Orchestrator:
             os.makedirs(self.output_dir, exist_ok=True)
             csv_path = os.path.join(self.output_dir, f"test_fusion_{user_room}_{garmin_id}_{datetime.now().strftime('%H%M%S')}.csv")
             df_final.to_csv(csv_path, index=False)
-            log("ORCH_SYNC", f"CSV scritto: {csv_path}")
+            log("ORCH_SYNC", f"CSV written on: {csv_path}")
     
             # self._apply_focus_engine(df_final) # COMMENTATO PER TEST
             # ---------------------------------------
