@@ -11,10 +11,10 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy subscriber script
-COPY users_presence.py .
+COPY user_presence.py .
 
 # Force Python to flush print output immediately
 ENV PYTHONUNBUFFERED=1
 
 # Command to run the presence producer
-CMD ["python", "-u", "users_presence.py"] 
+CMD ["python", "-u", "user_presence.py"] 
