@@ -485,8 +485,6 @@ class Orchestrator:
                         # every 15 minutes
                         dt = _get_date_time(0)
                         is_working = self._is_working_hour(dt)
-                        log("DEBUG_TIME", f"Checking time: {dt.strftime('%H:%M:%S')} - Is Working? {is_working}")
-
                         if is_working:
                             all_metrics_list.append({
                                 "timestamp_local": dt, "garmin_id": garmin_id, "room": user_room,
@@ -501,8 +499,6 @@ class Orchestrator:
                         for t_off, val in stress_samples.items():
                             dt = _get_date_time(t_off)
                             is_working = self._is_working_hour(dt)
-                            log("DEBUG_TIME", f"Checking time: {dt.strftime('%H:%M:%S')} - Is Working? {is_working}")
-
                             if is_working and val >= 0: # -1/-2 are errors/missing data
                                 all_metrics_list.append({
                                     "timestamp_local": dt, "garmin_id": garmin_id, "room": user_room,
@@ -513,8 +509,6 @@ class Orchestrator:
                         for t_off, val in bb_samples.items():
                             dt = _get_date_time(t_off)
                             is_working = self._is_working_hour(dt)
-                            log("DEBUG_TIME", f"Checking time: {dt.strftime('%H:%M:%S')} - Is Working? {is_working}")
-
                             if is_working:
                                 all_metrics_list.append({
                                     "timestamp_local": dt, "garmin_id": garmin_id, "room": user_room,
@@ -527,8 +521,6 @@ class Orchestrator:
                         for t_off, val in hr_samples.items():
                             dt = _get_date_time(t_off)
                             is_working = self._is_working_hour(dt)
-                            log("DEBUG_TIME", f"Checking time: {dt.strftime('%H:%M:%S')} - Is Working? {is_working}")
-
                             if is_working:
                                 all_metrics_list.append({
                                     "timestamp_local": dt, "garmin_id": garmin_id, "room": user_room,
@@ -541,7 +533,6 @@ class Orchestrator:
                         for t_off, val in hrv_samples.items():
                             dt = _get_date_time(t_off)
                             is_working = self._is_working_hour(dt)
-                            log("DEBUG_TIME", f"Checking time: {dt.strftime('%H:%M:%S')} - Is Working? {is_working}")
                             # HRV è fondamentale sia per la baseline che per lo studio
                             if is_working and val is not None:
                                 all_metrics_list.append({
@@ -557,7 +548,6 @@ class Orchestrator:
                         for t_off, val in resp_samples.items():
                             dt = _get_date_time(t_off)
                             is_working = self._is_working_hour(dt)
-                            log("DEBUG_TIME", f"Checking time: {dt.strftime('%H:%M:%S')} - Is Working? {is_working}")
                             if is_working:
                                 all_metrics_list.append({
                                     "timestamp_local": dt, 
