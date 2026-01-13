@@ -69,7 +69,7 @@ eda-architecture/
 │   │       ├── processing/      # Wearable data producer & processor
 │   │       ├── db_utils.py      # SQLite token & user mapping utilities
 │   │       └── garmin_client.py # Garmin OAuth 1.0a client
-│   ├── fit_processor/           # Java-based FIT file processor
+│   ├── fit-processor/           # Java-based FIT file processor
 │   │   └── Dockerfile
 │   ├── kafka_consumer/          # Kafka consumer -> MongoDB writer
 │   │   ├── Dockerfile

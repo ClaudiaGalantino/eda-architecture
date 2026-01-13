@@ -135,9 +135,9 @@ services:
       - mongo
 
   # Fit Processor Service
-  fit_processor:
-    build: ./services/fit_processor
-    container_name: fit_processor
+  fit-processor:
+    build: ./services/fit-processor
+    container_name: fit-processor
     restart: unless-stopped
     ports:
       - 8080:8080

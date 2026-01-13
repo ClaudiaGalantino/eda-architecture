@@ -4,7 +4,7 @@ from zoneinfo import ZoneInfo
 from app.db_utils import *
 from app.processing.wearable_producer import send_data
 import app.garmin_client as garmin_module
-import asyncio, requests, threading, io, base64
+import asyncio, requests, threading, io, base64, json
 
 CET = ZoneInfo("Europe/Rome")
 def log(prefix, message):
@@ -90,29 +90,32 @@ async def process_ping(summary_type, callback_url, garmin_id):
     
     if resp.status_code == 200:
         if summary_type == 'activityFiles':
-            log("PROCESS_DATA", f"Sending FIT file to fit_processor for {garmin_id}")
+            log("PROCESS_DATA", f"Sending FIT file to fit-processor for {garmin_id}")
             fit_file_bin = io.BytesIO(resp.content)
-            # Call Java fit_processor container
+            # Call Java fit-processor container
             files = {'file': ('activity.fit', fit_file_bin, 'application/octet-stream')}
             params = {'deviceIdentifier': garmin_id}
             try:
-                # Eseguiamo la POST verso il container fit_processor
+                # Eseguiamo la POST verso il container fit-processor
                 # L'URL usa il nome del servizio definito nel docker-compose
                 java_resp = requests.post(
-                    "http://fit_processor:8080/process", 
+                    "http://fit-processor:8080/process", 
                     params=params,
                     files=files
-                )
-                
+                )                
                 if java_resp.status_code == 200:
-                    payload = java_resp.text 
-                    log("PROCESS_DATA", "FIT file processed successfully")
+                    processed_chunks = []
+                    for line in java_resp.iter_lines():
+                        if line:
+                            processed_chunks.append(json.loads(line.decode('utf-8')))
+                    payload = processed_chunks
+                    log("PROCESS_DATA", f"FIT file processed successfully: {len(payload)} chunks received")
                 else:
                     log("PROCESS_DATA", f"Java processor error: {java_resp.status_code}")
                     payload = base64.b64encode(resp.content).decode('utf-8')
                     
             except Exception as e:
-                log("PROCESS_DATA", f"Failed to connect to fit_processor: {e}")
+                log("PROCESS_DATA", f"Failed to connect to fit-processor: {e}")
                 payload = base64.b64encode(resp.content).decode('utf-8')
             try:
                 payload = resp.json()
