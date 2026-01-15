@@ -90,37 +90,68 @@ async def process_ping(summary_type, callback_url, garmin_id):
     
     if resp.status_code == 200:
         if summary_type == 'activityFiles':
+
+            log("PROCESS_DATA", f"No token found for Garmin ID {garmin_id}")
+        return
+    
+    resp = await fetch_data_from_garmin(token, secret, callback_url)
+
+    if resp is None:
+        log("PROCESS_DATA", f"Failed to fetch data for Garmin ID {garmin_id}")
+        return
+    
+    if resp.status_code == 200:
+        # ===== HANDLE FIT FILE =====
+        if summary_type == 'activityFiles':
             log("PROCESS_DATA", f"Sending FIT file to fit-processor for {garmin_id}")
+            
+            # Validate FIT file
+            if len(resp.content) == 0:
+                log("PROCESS_DATA", f"Empty FIT file for {garmin_id}, skipping")
+                return
             fit_file_bin = io.BytesIO(resp.content)
-            # Call Java fit-processor container
             files = {'file': ('activity.fit', fit_file_bin, 'application/octet-stream')}
             params = {'deviceIdentifier': garmin_id}
+            
             try:
-                # Eseguiamo la POST verso il container fit-processor
-                # L'URL usa il nome del servizio definito nel docker-compose
+                # Call fit-processor
                 java_resp = requests.post(
                     "http://fit-processor:8080/process", 
                     params=params,
-                    files=files
-                )                
+                    files=files,
+                    timeout=30
+                )
+                
                 if java_resp.status_code == 200:
                     processed_chunks = []
                     for line in java_resp.iter_lines():
                         if line:
-                            processed_chunks.append(json.loads(line.decode('utf-8')))
-                    payload = processed_chunks
-                    log("PROCESS_DATA", f"FIT file processed successfully: {len(payload)} chunks received")
-                else:
-                    log("PROCESS_DATA", f"Java processor error: {java_resp.status_code}")
-                    payload = base64.b64encode(resp.content).decode('utf-8')
+                            try:
+                                processed_chunks.append(json.loads(line.decode('utf-8')))
+                            except json.JSONDecodeError as e:
+                                log("PROCESS_DATA", f"Failed to parse chunk: {e}")
                     
-            except Exception as e:
+                    if processed_chunks: 
+                        payload = processed_chunks 
+                        log("PROCESS_DATA", f"FIT file processed successfully:  {len(payload)} chunks received")
+                    else:
+                        log("PROCESS_DATA", f"No data chunks received from fit-processor")
+                        payload = {"error": "empty_response", "raw":  base64.b64encode(resp.content).decode('utf-8')}
+                else:
+                    log("PROCESS_DATA", f"Java processor error: {java_resp.status_code} - {java_resp.text}")
+                    payload = {
+                        "error": "fit_processor_failed",
+                        "status_code": java_resp.status_code,
+                        "raw": base64.b64encode(resp.content).decode('utf-8')
+                    }
+                    
+            except requests.exceptions.RequestException as e:
                 log("PROCESS_DATA", f"Failed to connect to fit-processor: {e}")
-                payload = base64.b64encode(resp.content).decode('utf-8')
-            try:
-                payload = resp.json()
-            except Exception:
-                payload = resp.text
+                payload = {
+                    "error": "connection_failed",
+                    "message": str(e),
+                    "raw": base64.b64encode(resp.content).decode('utf-8')
+                }
         else:
             try:
                 payload = resp.json()
