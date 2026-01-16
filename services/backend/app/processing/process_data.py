@@ -89,18 +89,6 @@ async def process_ping(summary_type, callback_url, garmin_id):
         return
     
     if resp.status_code == 200:
-        if summary_type == 'activityFiles':
-
-            log("PROCESS_DATA", f"No token found for Garmin ID {garmin_id}")
-        return
-    
-    resp = await fetch_data_from_garmin(token, secret, callback_url)
-
-    if resp is None:
-        log("PROCESS_DATA", f"Failed to fetch data for Garmin ID {garmin_id}")
-        return
-    
-    if resp.status_code == 200:
         # ===== HANDLE FIT FILE =====
         if summary_type == 'activityFiles':
             log("PROCESS_DATA", f"Sending FIT file to fit-processor for {garmin_id}")
