@@ -98,9 +98,12 @@ async def process_ping(summary_type, callback_url, garmin_id):
                 log("PROCESS_DATA", f"Empty FIT file for {garmin_id}, skipping")
                 return
             fit_file_bin = io.BytesIO(resp.content)
-            files = {'file': ('activity.fit', fit_file_bin, 'application/octet-stream')}
-            params = {'deviceIdentifier': garmin_id}
-            
+            fit_file_bin.seek(0)
+            files = {'file': ('activity.fit', fit_file_bin)}
+            params = {
+                'deviceIdentifier': garmin_id,
+                'responseBufferSize': 50
+                }            
             try:
                 # Call fit-processor
                 java_resp = requests.post(
@@ -164,4 +167,5 @@ async def process_ping(summary_type, callback_url, garmin_id):
     else:
         log("PROCESS_DATA", f"Fetch failed: status={resp.status_code} body={resp.text}")
 
+    # debug print to remove when working
     print(f"The summary is {summary_type} and the url is {callback_url}")

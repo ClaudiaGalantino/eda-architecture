@@ -20,3 +20,6 @@ data*/*
 
 # Visual Studio Code settings
 .vscode/
+
+# Spring configuration files
+services/fit-processor/application.properties

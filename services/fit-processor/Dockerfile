@@ -1,10 +1,11 @@
-# Java image
-FROM  eclipse-temurin:17-jdk-jammy
+FROM eclipse-temurin:17-jdk-jammy
 
 WORKDIR /app
 
-COPY container-2.11.jar  garmin.jar
+COPY container.jar garmin.jar
+COPY application.properties application.properties
 
 EXPOSE 8080
 
-CMD ["java", "-jar", "garmin.jar"]
+# Usa Spring Boot con configurazione esterna
+CMD ["java", "-jar", "garmin.jar", "--spring.config.location=file:/app/application.properties"]
