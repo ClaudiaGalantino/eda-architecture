@@ -67,6 +67,7 @@ class Orchestrator:
         self.topic_enriched_raw = os.getenv('KAFKA_ENRICHED_TOPICS')
         self.kafka_acks = os.getenv('KAFKA_ACKS', 'all')
         self.kafka_retries = int(os.getenv('KAFKA_RETRIES', 5))
+        self.allowed_garmin_ids_raw = os.getenv('ALLOWED_GARMIN_IDS')
 
         # Validate environment variables
         missing = []
@@ -85,6 +86,7 @@ class Orchestrator:
             "KAFKA_TRIGGER_TOPIC": self.kafka_trigger_topic,
             "KAFKA_EN_CLIENT_ID": self.kafka_prod_client_id,
             "KAFKA_ENRICHED_TOPICS": self.topic_enriched_raw,
+            "ALLOWED_GARMIN_IDS": self.allowed_garmin_ids_raw,
             }.items():
             if not var_value:
                 missing.append(var_name)
@@ -100,6 +102,7 @@ class Orchestrator:
             self.rooms_list = [room.strip() for room in self.rooms_list_raw.split(',')]
             self.users_email_list = [email.strip() for email in self.users_email_list_raw.split(',')]
             self.topic_enriched = [topic.strip() for topic in self.topic_enriched_raw.split(',')] if self.topic_enriched_raw else []
+            self.allowed_garmin_ids = [gid.strip() for gid in self.allowed_garmin_ids_raw.split(',') if gid.strip()]
 
         except Exception as e:
             message = f"Error parsing list environment variables: {str(e)}"
@@ -238,6 +241,9 @@ class Orchestrator:
             garmin_id = data.get('garmin_id')
             if not garmin_id:
                 return None, "Missing garmin_id in message"
+            if self.allowed_garmin_ids and garmin_id not in self.allowed_garmin_ids:
+                log("ORCH_ENRICH", f"Skipping wearable message for non-allowed garmin_id: {garmin_id}")
+                return None, None
             room = self.redis_client.get(f"garmin_room:{garmin_id}")
             if room is not None:
                 data['user_room'] = room
@@ -470,6 +476,13 @@ class Orchestrator:
                 summary_type = raw_data.get('summary_type')
                 garmin_id = raw_data.get('garmin_id')
                 user_room = raw_data.get('user_room')
+
+                if not garmin_id:
+                    log("ORCH_PROC", "Skipping wearable message without garmin_id")
+                    continue
+                if self.allowed_garmin_ids and garmin_id not in self.allowed_garmin_ids:
+                    log("ORCH_PROC", f"Skipping wearable message for non-allowed garmin_id: {garmin_id}")
+                    continue
 
                 for entry in raw_data.get('data', []):
                     t_start_unix = entry.get('startTimeInSeconds')
