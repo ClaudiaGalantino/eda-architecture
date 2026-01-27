@@ -118,6 +118,8 @@ services:
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
     volumes:
       - ./data/mongo_db:/data/db
+    ports:
+      - 27017:27017
 
   # Mongo Express Service
   mongo-express:

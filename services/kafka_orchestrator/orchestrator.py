@@ -33,7 +33,7 @@ class Orchestrator:
         self.mongo_db = None
         self.producer = None
         self.wearable_buffer = []
-        self.BATCH_SIZE = 5
+        self.BATCH_SIZE = 1
         self.WORKING_HOURS= [(9,12), (14,18)] # 9AM-12PM and 2PM-6PM 
         # Absolute output directory mapped by Docker: ./data/orchestrator -> /app/orchestrator_data
         self.output_dir = os.getenv('ORCH_DATA_DIR', '/app/orchestrator_data')
