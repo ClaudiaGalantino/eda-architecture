@@ -588,6 +588,7 @@ class Orchestrator:
 
                             if sleep_metrics_list:
                                 df_sleep = pd.DataFrame(sleep_metrics_list)
+                                df_sleep['timestamp_local'] = pd.to_datetime(df_sleep['timestamp_local']).dt.tz_localize(None)
                                 # include into df also extra sleep metadata
                                 for key, value in extra_sleep_metadata.items():
                                     df_sleep[key] = value
