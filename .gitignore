@@ -23,3 +23,9 @@ data*/*
 
 # Spring configuration files
 services/fit-processor/application.properties
+
+# CSV files
+*.csv
+
+# Output files
+/outputs/*
