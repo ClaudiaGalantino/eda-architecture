@@ -8,12 +8,12 @@ __pycache__/
 
 # Virtual environments
 services/*/env/
-
+*/env/
 # Logs
 *.log
 
 # Data files
-data*/*
+data/*
 
 # SQLite database
 *.db

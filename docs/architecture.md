@@ -1,82 +1,121 @@
 # ☁️ System Architecture Diagram
 
-This diagram illustrates the complete data flow within the **Event-Driven Architecture (EDA)** system,  
-from IoT room nodes and wearables up to cloud ingestion, processing, and federated learning components.
-
 ```mermaid
 flowchart TD
-  subgraph SENSING_UNIT
-    subgraph WEARABLES
-          W["Wearables (Garmin)"]
-          APP["Garmin Connect"]
-          SDK["Garmin SDK / API"]
-      end
-    subgraph ROOM_NODES [Room Nodes]
-        S_A["Env sensors (Room A)"]
-        S_B["Env sensors (Room B)"]
-        S_C["Env sensors (Room C)"]
-    end
+%% ============================================================
+%% PHYSICAL LAYER
+%% ============================================================
+subgraph PHYSICAL_LAYER [PHYSICAL LAYER]
+    direction TB
     
-  end
-
-  subgraph CLOUD [Cloud]
-    subgraph Ingestion
-		    M1["MQTT publisher"]
-        M["Mosquitto"]
-        M2[""MQTT-Kafka bridge]
-        PROD["Kafka Producer"]
+    subgraph C [C - WEARABLE NODE]
+        W1[Garmin device_1]
+        W2[Garmin device_2]
+        G_APP[Garmin Connect]
+        W1 & W2 --> G_APP
     end
-    subgraph Processing
-		    
-        STREAM["Kafka Broker"]
-        CONSUMER["Kafka Consumer"]
-        ORCH["Intelligent Orchestrator"]
-        FL_COORD["Federated Learning"]
+
+    subgraph A [A - SENSING UNITS]
+        S_A["Env sensors (Room A)
+        MQTT Publisher"]
+        S_B["Env sensors (Room B)
+        MQTT Publisher"]
+        S_C["Env sensors (Room C)
+        MQTT Publisher"]
     end
-    STORE["Model & Data Storage (Cloud Storage)"]
-    IDX1["Stress Index"]
-    IDX2["Alert Index"]
-    IDX3["Recovery Index"]
-  end
+end
 
-  %% =====================
-  %% CONNECTIONS
-  %% =====================
-  %% Room nodes push
-  S_A & S_B & S_C --> M1
-  M1-->M-->M2
-  M2 --> STREAM
+%% ============================================================
+%% DOCKER CONTAINERS
+%% ============================================================
+subgraph DOCKER [DOCKER CONTAINERS]
 
-  %% Orchestrator invokes wearable producer
-  PROD --> STREAM
-  ORCH --> SDK
-  SDK --> PROD
+    subgraph H [H - USER INTERACTION]
+        CLI["User Presence CLI
+        Kafka Producer"]
+    end
 
-  %% Consumer DB
-  STREAM --> CONSUMER
-  CONSUMER --> STORE
+    subgraph PROCESSING [PROCESSING]
+        D[D - Backend Flask]
+        KAFKA{{"kafka"}}
+        E[E - Kafka Standard Consumer]
+        F[F - Intelligent Orchestrator]
+        STRESS[Stress Index]
+        
+        D -- "Produce on topic 
+        wearable_data" --> KAFKA
+        CLI -- "Produce on
+        user_presence" --> KAFKA
+        KAFKA -- "consume data" --> E
+        KAFKA -- "consume data" --> F
+        F --> STRESS
+    end
 
-  %% Orchestrator reads raw data from the DB to compute indices
-  ORCH <--> CONSUMER
-  ORCH --> IDX1 & IDX2 & IDX3
+    subgraph B [B - DATA INGESTION]
+        direction TB
+        MOSQ["mosquitto"]
+        BRIDGE["MQTT - Kafka bridge"]
+        
+        MOSQ -- "subscribe to all topics" --> BRIDGE
+    end
 
-  %% Federated learning
-  FL_COORD <--> STORE 
-  ORCH <--> FL_COORD
+    subgraph G [G - MONGO DB]
+        DB[(mongo DB)]
+    end
+
+end
+
+%% ============================================================
+%% CONNECTIONS & FLOWS
+%% ============================================================
+
+%% Wearable flow
+G_APP -- "Data" --> D
+
+%% Sensing units flow
+S_A -- "Publish data on topic 
+sensor/room_A" --> MOSQ
+S_B -- "Publish data on topic 
+sensor/room_B" --> MOSQ
+S_C -- "Publish data on topic 
+sensor/room_C" --> MOSQ
+
+%% Bridge to Kafka
+BRIDGE -- "Produce on 
+sensor_data" --> KAFKA
+
+%% Storage connections
+E --"store raw data"--> DB
+STRESS --> DB
 ```
 
-## 🧭 Description
 
-Room Nodes: Environmental sensors deployed in multiple rooms publish data via MQTT.
+## 🧭 System Description
+The architecture follows an Event-Driven Architecture pattern, leveraging Docker containers to decouple data ingestion, message streaming, and intelligent processing.
 
-Wearables: Garmin devices stream biometric data through the Garmin Connect SDK.
+1. Physical Layer (Data Sources)
 
-MQTT Broker: Acts as the ingestion layer for IoT messages.
+[A] Sensing Units: Environmental sensors located in different zones (Rooms A, B, and C). These act as MQTT Publishers, broadcasting telemetry data to specific room-based topics.
 
-Kafka Broker: Processes incoming data streams and distributes them to downstream services.
+[C] Wearable Node: Garmin devices (1 & 2) that sync via Garmin Connect. This node handles the initial collection of biometric data before sending it to the cloud backend.
 
-Intelligent Orchestrator: Performs analytics and computes key indices (Stress, Alert, Recovery).
+2. Data Ingestion & Interaction
 
-Federated Learning Coordinator: Manages model updates across distributed nodes while preserving data privacy.
+[B] Data Ingestion: A centralized Mosquitto broker receives all environmental MQTT traffic. An MQTT-Kafka Bridge subscribes to these topics and transforms the messages into Kafka events, producing them on the `sensor_data` topic.
 
-Cloud Storage: Central repository for models and processed data.
+[H] User Interaction: A dedicated User Presence CLI acts as a Kafka Producer, allowing manual or automated injections of user status data into the `user_presence` topic.
+
+[D] Backend Flask: Serves as the entry point for wearable data. It processes incoming requests from the Garmin ecosystem and produces events on the `wearable_data` Kafka topic.
+
+3. Processing & Streaming Layer
+
+Kafka Broker: The central nervous system of the architecture. It manages the pub/sub logic for three main data streams: wearable data, sensor data, and user presence.
+
+[F] Intelligent Orchestrator: A specialized consumer that pulls data from Kafka to perform real-time analysis, resulting in the computation of the Stress Index.
+
+[E] Kafka Standard Consumer: A utility service dedicated to data persistence. It consumes raw data streams from Kafka to ensure they are backed up.
+
+4. Storage & Persistence
+
+[G] MongoDB: The primary persistent storage layer. It stores Raw Data: Handled by the Standard Consumer [E].
+Processed Indices: Calculated values (like the Stress Index) sent from the Orchestrator [F].
