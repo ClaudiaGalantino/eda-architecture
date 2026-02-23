@@ -115,6 +115,7 @@ pyarrow==22.0.0
 pyasn1==0.6.2
 pyasn1_modules==0.4.2
 pycparser==3.0
+pypalettes==0.2.0
 pydantic==2.12.5
 pydantic_core==2.41.5
 Pygments==2.19.2
