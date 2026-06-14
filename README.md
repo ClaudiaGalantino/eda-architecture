@@ -158,6 +158,22 @@ docker logs ngrok -f
 - **ngrok console** (if enabled): http://localhost:4040
 
 
+## 📈 Performance & Study Results (R1k)
+
+The architecture has been stress-tested and validated through a 30-day continuous monitoring study.
+
+### Technical Performance
+- **Latency**: End-to-end median latency of **150ms** (from edge event to database persistence).
+- **Reliability**: **Zero message loss** over 30 days, verified by Kafka-MongoDB event count comparison.
+- **Resilience**: High availability with automated container recovery within **2 seconds**.
+
+### Study Summary
+- **Participants**: 3 Users monitored via Garmin Vìvoactive 5.
+- **Monitoring Scope**: 3 concurrent locations (Home, Lab, Library).
+- **Data Volume**: **54,657 fused samples** generated with a **98.6%** forward-fill rate.
+- **Temporal Coverage**: Real-time aggregation at 1-minute intervals during active hours (09:00 – 18:00).
+
+
 ## 🧪 Edge (Raspberry Pi publisher)
 
 See [`edge/README.md`](edge/README.md).
