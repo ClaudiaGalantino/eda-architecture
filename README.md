@@ -158,7 +158,7 @@ docker logs ngrok -f
 - **ngrok console** (if enabled): http://localhost:4040
 
 
-## 📈 Performance & Study Results (R1k)
+## 📈 Performance & Study Results
 
 The architecture has been stress-tested and validated through a 30-day continuous monitoring study.
 
