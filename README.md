@@ -63,6 +63,7 @@ eda-architecture/
 ├── configs/                      # Configuration files (Mosquitto, etc.)
 ├── docs/
 ├── edge/                         # Raspberry Pi sensor publisher script
+├── performance_&_study_results/  # Technical Performance & Study Summary
 ├── services/
 │   ├── backend/                  # Flask REST API + Garmin OAuth + Kafka producer
 │   ├── fit-processor/            # Java-based FIT processor
